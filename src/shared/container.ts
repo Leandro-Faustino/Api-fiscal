@@ -35,6 +35,34 @@ import { StartMfaChallengeUseCase } from '../modules/access/application/use-case
 import { VerifyMfaChallengeUseCase } from '../modules/access/application/use-cases/verify-mfa-challenge.js';
 import { RequestPasswordResetUseCase } from '../modules/access/application/use-cases/request-password-reset.js';
 import { ResetPasswordUseCase } from '../modules/access/application/use-cases/reset-password.js';
+import type { CertificateInspector } from '../modules/credentials/application/ports/certificate-inspector.js';
+import type { CredentialCipher } from '../modules/credentials/application/ports/credential-cipher.js';
+import type { DigitalCertificateRepository } from '../modules/credentials/application/ports/digital-certificate-repository.js';
+import { GetDigitalCertificateUseCase } from '../modules/credentials/application/use-cases/get-digital-certificate.js';
+import { ListDigitalCertificatesUseCase } from '../modules/credentials/application/use-cases/list-digital-certificates.js';
+import { RevokeDigitalCertificateUseCase } from '../modules/credentials/application/use-cases/revoke-digital-certificate.js';
+import { UploadA1CertificateUseCase } from '../modules/credentials/application/use-cases/upload-a1-certificate.js';
+import { RotateCredentialKeysUseCase } from '../modules/credentials/application/use-cases/rotate-credential-keys.js';
+import { PrismaDigitalCertificateRepository } from '../modules/credentials/infra/repositories/prisma-digital-certificate-repository.js';
+import { AesGcmCredentialCipher } from '../modules/credentials/infra/security/aes-gcm-credential-cipher.js';
+import { Pkcs12CertificateInspector } from '../modules/credentials/infra/security/pkcs12-certificate-inspector.js';
+import type { CredentialAuthorityRepository } from '../modules/credentials/application/ports/credential-authority-repository.js';
+import { AssignCompanyResponsibleUseCase } from '../modules/credentials/application/use-cases/assign-company-responsible.js';
+import {
+  DeactivateCompanyResponsibleUseCase,
+  ListCompanyResponsiblesUseCase,
+} from '../modules/credentials/application/use-cases/manage-company-responsibles.js';
+import { CreatePowerOfAttorneyUseCase } from '../modules/credentials/application/use-cases/create-power-of-attorney.js';
+import {
+  ListPowersOfAttorneyUseCase,
+  RevokePowerOfAttorneyUseCase,
+} from '../modules/credentials/application/use-cases/manage-powers-of-attorney.js';
+import {
+  AcknowledgeCredentialAlertUseCase,
+  ListCredentialAlertsUseCase,
+  ScanCredentialExpirationAlertsUseCase,
+} from '../modules/credentials/application/use-cases/manage-credential-alerts.js';
+import { PrismaCredentialAuthorityRepository } from '../modules/credentials/infra/repositories/prisma-credential-authority-repository.js';
 
 export interface Cradle {
   prismaClient: PrismaClient;
@@ -72,6 +100,27 @@ export interface Cradle {
   createInvitationUseCase: CreateInvitationUseCase;
   acceptInvitationUseCase: AcceptInvitationUseCase;
   listMembersUseCase: ListMembersUseCase;
+  credentialVaultMasterKey: string;
+  credentialVaultKeyVersion: number;
+  credentialVaultPreviousKeys: string;
+  certificateInspector: CertificateInspector;
+  credentialCipher: CredentialCipher;
+  digitalCertificateRepository: DigitalCertificateRepository;
+  uploadA1CertificateUseCase: UploadA1CertificateUseCase;
+  getDigitalCertificateUseCase: GetDigitalCertificateUseCase;
+  listDigitalCertificatesUseCase: ListDigitalCertificatesUseCase;
+  revokeDigitalCertificateUseCase: RevokeDigitalCertificateUseCase;
+  rotateCredentialKeysUseCase: RotateCredentialKeysUseCase;
+  credentialAuthorityRepository: CredentialAuthorityRepository;
+  assignCompanyResponsibleUseCase: AssignCompanyResponsibleUseCase;
+  listCompanyResponsiblesUseCase: ListCompanyResponsiblesUseCase;
+  deactivateCompanyResponsibleUseCase: DeactivateCompanyResponsibleUseCase;
+  createPowerOfAttorneyUseCase: CreatePowerOfAttorneyUseCase;
+  listPowersOfAttorneyUseCase: ListPowersOfAttorneyUseCase;
+  revokePowerOfAttorneyUseCase: RevokePowerOfAttorneyUseCase;
+  scanCredentialExpirationAlertsUseCase: ScanCredentialExpirationAlertsUseCase;
+  listCredentialAlertsUseCase: ListCredentialAlertsUseCase;
+  acknowledgeCredentialAlertUseCase: AcknowledgeCredentialAlertUseCase;
 }
 
 export function createApplicationContainer(env: Env, prismaClient: PrismaClient): AwilixContainer<Cradle> {
@@ -116,6 +165,39 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     createInvitationUseCase: asClass(CreateInvitationUseCase).singleton(),
     acceptInvitationUseCase: asClass(AcceptInvitationUseCase).singleton(),
     listMembersUseCase: asClass(ListMembersUseCase).singleton(),
+    credentialVaultMasterKey: asValue(env.CREDENTIAL_VAULT_MASTER_KEY),
+    credentialVaultKeyVersion: asValue(env.CREDENTIAL_VAULT_KEY_VERSION),
+    credentialVaultPreviousKeys: asValue(env.CREDENTIAL_VAULT_PREVIOUS_KEYS),
+    certificateInspector: asClass(Pkcs12CertificateInspector).singleton(),
+    credentialCipher: asClass(AesGcmCredentialCipher).singleton(),
+    digitalCertificateRepository: asClass(PrismaDigitalCertificateRepository).singleton(),
+    uploadA1CertificateUseCase: asClass(UploadA1CertificateUseCase).singleton(),
+    getDigitalCertificateUseCase: asClass(GetDigitalCertificateUseCase).singleton(),
+    listDigitalCertificatesUseCase: asClass(ListDigitalCertificatesUseCase).singleton(),
+    revokeDigitalCertificateUseCase: asClass(RevokeDigitalCertificateUseCase).singleton(),
+    rotateCredentialKeysUseCase: asClass(RotateCredentialKeysUseCase).singleton(),
+    credentialAuthorityRepository: asClass(
+      PrismaCredentialAuthorityRepository,
+    ).singleton(),
+    assignCompanyResponsibleUseCase: asClass(
+      AssignCompanyResponsibleUseCase,
+    ).singleton(),
+    listCompanyResponsiblesUseCase: asClass(
+      ListCompanyResponsiblesUseCase,
+    ).singleton(),
+    deactivateCompanyResponsibleUseCase: asClass(
+      DeactivateCompanyResponsibleUseCase,
+    ).singleton(),
+    createPowerOfAttorneyUseCase: asClass(CreatePowerOfAttorneyUseCase).singleton(),
+    listPowersOfAttorneyUseCase: asClass(ListPowersOfAttorneyUseCase).singleton(),
+    revokePowerOfAttorneyUseCase: asClass(RevokePowerOfAttorneyUseCase).singleton(),
+    scanCredentialExpirationAlertsUseCase: asClass(
+      ScanCredentialExpirationAlertsUseCase,
+    ).singleton(),
+    listCredentialAlertsUseCase: asClass(ListCredentialAlertsUseCase).singleton(),
+    acknowledgeCredentialAlertUseCase: asClass(
+      AcknowledgeCredentialAlertUseCase,
+    ).singleton(),
   });
 
   return container;

@@ -21,6 +21,9 @@ const env: Env = {
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   ENABLE_SWAGGER_UI: true,
   MFA_ENCRYPTION_KEY: 'test-mfa-encryption-key-with-32-characters',
+  CREDENTIAL_VAULT_MASTER_KEY: Buffer.alloc(32, 11).toString('base64'),
+  CREDENTIAL_VAULT_KEY_VERSION: 1,
+  CREDENTIAL_VAULT_PREVIOUS_KEYS: '{}',
   MFA_ISSUER: 'API Fiscal Test',
   MFA_CHALLENGE_TTL_MINUTES: 5,
   MFA_MAXIMUM_ATTEMPTS: 5,
@@ -42,6 +45,7 @@ describe('fronteira HTTP autenticada', () => {
 
     const health = await app.inject({ method: 'GET', url: '/health' });
     const docs = await app.inject({ method: 'GET', url: '/docs/json' });
+    const openApi = await app.inject({ method: 'GET', url: '/openapi.json' });
     const protectedRoute = await app.inject({
       method: 'POST',
       url: '/v1/control/companies',
@@ -50,6 +54,13 @@ describe('fronteira HTTP autenticada', () => {
 
     expect(health.statusCode).toBe(200);
     expect(docs.statusCode).toBe(200);
+    expect(openApi.statusCode).toBe(200);
+    expect(openApi.json().paths).toHaveProperty(
+      '/v1/control/credentials/certificates/a1',
+    );
+    expect(openApi.json().paths).toHaveProperty(
+      '/v1/control/credentials/certificates/rotate-key',
+    );
     expect(protectedRoute.statusCode).toBe(401);
     expect(protectedRoute.json()).toMatchObject({
       error: { code: 'UNAUTHORIZED' },

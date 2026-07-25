@@ -3,13 +3,29 @@ import type { MembershipRole } from './access.js';
 export type Permission =
   | 'companies:read'
   | 'companies:write'
+  | 'credentials:read'
+  | 'credentials:write'
   | 'members:read'
   | 'members:invite';
 
 const rolePermissions: Record<MembershipRole, ReadonlySet<Permission>> = {
-  OWNER: new Set(['companies:read', 'companies:write', 'members:read', 'members:invite']),
-  ADMIN: new Set(['companies:read', 'companies:write', 'members:read', 'members:invite']),
-  ACCOUNTANT: new Set(['companies:read', 'companies:write']),
+  OWNER: new Set([
+    'companies:read',
+    'companies:write',
+    'credentials:read',
+    'credentials:write',
+    'members:read',
+    'members:invite',
+  ]),
+  ADMIN: new Set([
+    'companies:read',
+    'companies:write',
+    'credentials:read',
+    'credentials:write',
+    'members:read',
+    'members:invite',
+  ]),
+  ACCOUNTANT: new Set(['companies:read', 'companies:write', 'credentials:read']),
   VIEWER: new Set(['companies:read']),
 };
 

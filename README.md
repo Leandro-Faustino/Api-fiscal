@@ -23,6 +23,11 @@ API em Node.js/TypeScript para a plataforma de gestão fiscal e inteligência co
 - consulta cadastral por adaptador substituível
 - isolamento de empresas por escritório
 - criação da empresa e auditoria na mesma transação
+- cofre de certificados A1 com validação PKCS#12
+- pacote A1 e senha cifrados com AES-256-GCM e contexto por escritório
+- keyring versionado com leitura de chaves anteriores e recifragem auditada em lotes
+- escopo do certificado limitado aos CNPJs autorizados
+- metadados de validade, revogação e trilha de auditoria sem exposição do segredo
 - tabela inicial de parâmetros fiscais por vigência (RNF-03)
 - testes unitários com Vitest
 
@@ -51,6 +56,9 @@ export POSTGRES_DB=<banco-local>
 export DATABASE_URL=<url-postgresql-local>
 export JWT_SECRET=<segredo-aleatorio-com-pelo-menos-32-caracteres>
 export MFA_ENCRYPTION_KEY=<chave-independente-com-pelo-menos-32-caracteres>
+export CREDENTIAL_VAULT_MASTER_KEY=<chave-base64-de-exatos-32-bytes>
+export CREDENTIAL_VAULT_KEY_VERSION=1
+export CREDENTIAL_VAULT_PREVIOUS_KEYS='{}'
 export MFA_ISSUER="API Fiscal"
 export ENABLE_SWAGGER_UI=true
 export REFRESH_TOKEN_TTL_DAYS=30
@@ -113,6 +121,19 @@ curl -X POST http://localhost:3333/v1/control/companies \
 
 O `tenantId` e o autor da operação são derivados do token autenticado. Eles não são aceitos no corpo ou em cabeçalhos informados pelo cliente.
 
+O certificado A1 é recebido como Base64 em
+`POST /v1/control/credentials/certificates/a1`. A resposta contém somente
+metadados. O PFX e sua senha nunca são retornados pelas rotas de consulta.
+Consulte o [modelo de segurança do cofre](docs/credential-vault.md) antes de
+habilitar dados reais.
+
+Para rotacionar a chave, configure uma nova `CREDENTIAL_VAULT_MASTER_KEY`,
+incremente `CREDENTIAL_VAULT_KEY_VERSION` e mantenha as chaves antigas em
+`CREDENTIAL_VAULT_PREVIOUS_KEYS`, no formato JSON
+`{"1":"<chave-base64-anterior>"}`. Em seguida, execute lotes idempotentes em
+`POST /v1/control/credentials/certificates/rotate-key`. Remova uma chave antiga
+somente depois que nenhum certificado persistido usar sua versão.
+
 ## Qualidade
 
 ```bash
@@ -134,6 +155,9 @@ unitários, testes de integração, checagem de tipos e build.
   deve usar um armazenamento compartilhado.
 - Sessões expiradas precisam de uma rotina periódica de limpeza e política de retenção.
 - As credenciais locais devem ser fornecidas por variáveis de ambiente e nunca versionadas.
+- O primeiro adaptador do cofre usa um keyring fornecido por variáveis de ambiente.
+  Antes de armazenar certificados reais em produção, trocar esse adaptador por
+  KMS/HSM com controle de acesso da infraestrutura.
 - A BrasilAPI é o primeiro adaptador de consulta cadastral, não uma garantia de fonte oficial ou SLA de produção.
 - Nenhuma faixa, alíquota, sublimite ou prazo fiscal foi codificado.
 - Os demais itens do Control estão priorizados em [docs/control-roadmap.md](docs/control-roadmap.md).
