@@ -1,6 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import swagger from '@fastify/swagger';
-import swaggerUi from '@fastify/swagger-ui';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import type { AwilixContainer } from 'awilix';
@@ -52,9 +51,12 @@ export async function buildApp({ env, container }: BuildAppOptions): Promise<Fas
     },
   });
 
-  await app.register(swaggerUi, {
-    routePrefix: '/docs',
-  });
+  if (env.ENABLE_SWAGGER_UI) {
+    const { default: swaggerUi } = await import('@fastify/swagger-ui');
+    await app.register(swaggerUi, {
+      routePrefix: '/docs',
+    });
+  }
 
   registerErrorHandler(app);
 
@@ -105,6 +107,8 @@ export async function buildApp({ env, container }: BuildAppOptions): Promise<Fas
 
   await accessRoutes(app, container.cradle, authenticate);
   await companyRoutes(app, container.cradle, authenticate);
+
+  app.get('/openapi.json', async () => app.swagger());
 
   app.addHook('onClose', async () => {
     await container.dispose();

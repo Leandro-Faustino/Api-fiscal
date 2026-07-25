@@ -20,10 +20,18 @@ export function registerAuthentication(
       throw new UnauthorizedError('Token ausente, inválido ou expirado.');
     }
 
+    if (!Number.isInteger(request.user.securityVersion)) {
+      throw new UnauthorizedError(
+        'Este acesso não está mais ativo.',
+        'ACCESS_REVOKED',
+      );
+    }
+
     const context = await cradle.accessRepository.findAuthContext(
       request.user.sub,
       request.user.membershipId,
       request.user.tenantId,
+      request.user.securityVersion,
     );
 
     if (!context) {

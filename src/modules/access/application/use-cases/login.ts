@@ -46,7 +46,9 @@ export class LoginUseCase {
       throw new UnauthorizedError('Este acesso está bloqueado.', 'ACCESS_BLOCKED');
     }
 
-    await this.accessRepository.recordSuccessfulLogin(record.userId, record.tenantId);
+    if (record.role !== 'OWNER' && record.role !== 'ADMIN') {
+      await this.accessRepository.recordSuccessfulLogin(record.userId, record.tenantId);
+    }
 
     const {
       passwordHash: _passwordHash,

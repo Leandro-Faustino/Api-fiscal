@@ -43,6 +43,11 @@ enum MembershipStatus {
   SUSPENDED
 }
 
+enum MfaChallengeType {
+  LOGIN
+  SETUP
+}
+
 model Tenant {
   id          String       @id @default(uuid()) @db.Uuid
   name        String
@@ -59,17 +64,23 @@ model Tenant {
 }
 
 model User {
-  id                 String       @id @default(uuid()) @db.Uuid
-  name               String
-  email              String       @unique
-  passwordHash       String       @map("password_hash")
-  status             UserStatus   @default(ACTIVE)
-  lastLoginAt        DateTime?    @map("last_login_at")
-  memberships        Membership[]
-  createdInvitations Invitation[] @relation("InvitationCreator")
-  auditLogs          AuditLog[]   @relation("AuditActor")
-  createdAt          DateTime     @default(now()) @map("created_at")
-  updatedAt          DateTime     @updatedAt @map("updated_at")
+  id                  String               @id @default(uuid()) @db.Uuid
+  name                String
+  email               String               @unique
+  passwordHash        String               @map("password_hash")
+  status              UserStatus           @default(ACTIVE)
+  securityVersion     Int                  @default(1) @map("security_version")
+  mfaEnabledAt        DateTime?            @map("mfa_enabled_at")
+  mfaSecretEncrypted  String?              @map("mfa_secret_encrypted")
+  lastLoginAt         DateTime?            @map("last_login_at")
+  memberships         Membership[]
+  createdInvitations  Invitation[]         @relation("InvitationCreator")
+  auditLogs           AuditLog[]           @relation("AuditActor")
+  mfaChallenges       MfaChallenge[]
+  mfaRecoveryCodes    MfaRecoveryCode[]
+  passwordResetTokens PasswordResetToken[]
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
 
   @@index([status])
   @@map("users")
@@ -84,6 +95,7 @@ model Membership {
   tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   refreshSessions RefreshSession[]
+  mfaChallenges   MfaChallenge[]
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
 
@@ -91,6 +103,51 @@ model Membership {
   @@index([userId, status])
   @@index([tenantId, status])
   @@map("memberships")
+}
+
+model MfaChallenge {
+  id              String           @id @default(uuid()) @db.Uuid
+  type            MfaChallengeType
+  tokenHash       String           @unique @map("token_hash")
+  userId          String           @map("user_id") @db.Uuid
+  membershipId    String           @map("membership_id") @db.Uuid
+  secretEncrypted String?          @map("secret_encrypted")
+  expiresAt       DateTime         @map("expires_at")
+  consumedAt      DateTime?        @map("consumed_at")
+  failedAttempts  Int              @default(0) @map("failed_attempts")
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership      Membership       @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, type, consumedAt])
+  @@index([expiresAt])
+  @@map("mfa_challenges")
+}
+
+model MfaRecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @unique @map("code_hash")
+  usedAt    DateTime? @map("used_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, usedAt])
+  @@map("mfa_recovery_codes")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, usedAt])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model RefreshSession {
@@ -131,22 +188,22 @@ model Invitation {
 }
 
 model Company {
-  id                String            @id @default(uuid()) @db.Uuid
-  tenantId          String            @map("tenant_id") @db.Uuid
-  cnpj              String            @db.Char(14)
-  legalName         String            @map("legal_name")
-  tradeName         String?           @map("trade_name")
-  registrationStatus CompanyStatus    @default(UNKNOWN) @map("registration_status")
-  openingDate       DateTime?         @map("opening_date") @db.Date
-  primaryCnae       String?           @map("primary_cnae")
-  primaryCnaeDescription String?       @map("primary_cnae_description")
-  municipality      String?
-  state             String?           @db.Char(2)
-  dataSource        CompanyDataSource @map("data_source")
-  registryUpdatedAt DateTime?         @map("registry_updated_at")
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
-  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                     String            @id @default(uuid()) @db.Uuid
+  tenantId               String            @map("tenant_id") @db.Uuid
+  cnpj                   String            @db.Char(14)
+  legalName              String            @map("legal_name")
+  tradeName              String?           @map("trade_name")
+  registrationStatus     CompanyStatus     @default(UNKNOWN) @map("registration_status")
+  openingDate            DateTime?         @map("opening_date") @db.Date
+  primaryCnae            String?           @map("primary_cnae")
+  primaryCnaeDescription String?           @map("primary_cnae_description")
+  municipality           String?
+  state                  String?           @db.Char(2)
+  dataSource             CompanyDataSource @map("data_source")
+  registryUpdatedAt      DateTime?         @map("registry_updated_at")
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+  tenant                 Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, cnpj])
   @@index([tenantId])
@@ -172,15 +229,15 @@ model AuditLog {
 }
 
 model TaxParameterVersion {
-  id            String   @id @default(uuid()) @db.Uuid
-  parameterType String   @map("parameter_type")
+  id            String    @id @default(uuid()) @db.Uuid
+  parameterType String    @map("parameter_type")
   jurisdiction  String
-  validFrom     DateTime @map("valid_from") @db.Date
+  validFrom     DateTime  @map("valid_from") @db.Date
   validUntil    DateTime? @map("valid_until") @db.Date
-  sourceUrl     String   @map("source_url")
-  sourceHash    String   @map("source_hash")
+  sourceUrl     String    @map("source_url")
+  sourceHash    String    @map("source_hash")
   payload       Json
-  createdAt     DateTime @default(now()) @map("created_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
 
   @@unique([parameterType, jurisdiction, validFrom])
   @@index([parameterType, jurisdiction, validFrom])

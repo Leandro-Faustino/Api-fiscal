@@ -52,6 +52,10 @@ export class RotateRefreshSessionUseCase {
           'REFRESH_TOKEN_REUSED',
         ],
         BLOCKED: ['Este acesso está bloqueado.', 'ACCESS_BLOCKED'],
+        MFA_REQUIRED: [
+          'Configure o MFA entrando novamente com sua senha.',
+          'MFA_SETUP_REQUIRED',
+        ],
       } as const;
       const [message, code] = errors[result.status];
       throw new UnauthorizedError(message, code);

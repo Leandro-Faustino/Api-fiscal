@@ -12,6 +12,8 @@ export interface AuthContext {
   role: MembershipRole;
   email: string;
   name: string;
+  securityVersion: number;
+  mfaEnabled: boolean;
 }
 
 export interface AccessSession extends AuthContext {

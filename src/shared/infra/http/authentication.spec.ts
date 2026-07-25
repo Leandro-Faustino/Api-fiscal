@@ -19,6 +19,13 @@ const env: Env = {
   REFRESH_TOKEN_TTL_DAYS: 30,
   AUTH_RATE_LIMIT_MAX: 100,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
+  ENABLE_SWAGGER_UI: true,
+  MFA_ENCRYPTION_KEY: 'test-mfa-encryption-key-with-32-characters',
+  MFA_ISSUER: 'API Fiscal Test',
+  MFA_CHALLENGE_TTL_MINUTES: 5,
+  MFA_MAXIMUM_ATTEMPTS: 5,
+  PASSWORD_RESET_TTL_MINUTES: 15,
+  EXPOSE_RECOVERY_TOKENS: true,
   INVITATION_TTL_HOURS: 72,
   COMPANY_REGISTRY_BASE_URL: 'https://brasilapi.com.br/api/cnpj/v1',
   COMPANY_REGISTRY_TIMEOUT_MS: 5_000,
@@ -83,6 +90,52 @@ describe('fronteira HTTP autenticada', () => {
     expect(blocked.json()).toMatchObject({
       error: { code: 'RATE_LIMIT_EXCEEDED' },
     });
+
+    await app.close();
+  });
+
+  it('rejeita JWT legado sem versão de segurança', async () => {
+    const container = createApplicationContainer(env, prisma);
+    container.register({
+      accessRepository: asValue(new FakeAccessRepository()),
+    });
+    const app = await buildApp({ env, container });
+    const legacyToken = app.jwt.sign({
+      sub: '10000000-0000-4000-8000-000000000001',
+      membershipId: '20000000-0000-4000-8000-000000000001',
+      tenantId: '30000000-0000-4000-8000-000000000001',
+      role: 'OWNER',
+    } as never);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/auth/me',
+      headers: { authorization: `Bearer ${legacyToken}` },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      error: { code: 'ACCESS_REVOKED' },
+    });
+
+    await app.close();
+  });
+
+  it('não registra o Swagger UI em produção e mantém o OpenAPI JSON', async () => {
+    const productionEnv: Env = {
+      ...env,
+      NODE_ENV: 'production',
+      ENABLE_SWAGGER_UI: false,
+      EXPOSE_RECOVERY_TOKENS: false,
+    };
+    const container = createApplicationContainer(productionEnv, prisma);
+    const app = await buildApp({ env: productionEnv, container });
+
+    const swaggerUi = await app.inject({ method: 'GET', url: '/docs/json' });
+    const openApi = await app.inject({ method: 'GET', url: '/openapi.json' });
+
+    expect(swaggerUi.statusCode).toBe(404);
+    expect(openApi.statusCode).toBe(200);
 
     await app.close();
   });

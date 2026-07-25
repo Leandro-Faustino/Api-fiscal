@@ -28,6 +28,8 @@ const sessionMembershipSelect = {
       name: true,
       email: true,
       status: true,
+      securityVersion: true,
+      mfaEnabledAt: true,
     },
   },
 } satisfies Prisma.MembershipSelect;
@@ -46,6 +48,8 @@ function toAccessSession(membership: SessionMembership): AccessSession {
     role: membership.role,
     email: membership.user.email,
     name: membership.user.name,
+    securityVersion: membership.user.securityVersion,
+    mfaEnabled: membership.user.mfaEnabledAt !== null,
   };
 }
 
@@ -101,6 +105,15 @@ export class PrismaRefreshSessionRepository implements RefreshSessionRepository 
       ) {
         await this.revokeFamily(transaction, current.familyId, now);
         return { status: 'BLOCKED' };
+      }
+
+      if (
+        (current.membership.role === 'OWNER' ||
+          current.membership.role === 'ADMIN') &&
+        current.membership.user.mfaEnabledAt === null
+      ) {
+        await this.revokeFamily(transaction, current.familyId, now);
+        return { status: 'MFA_REQUIRED' };
       }
 
       const consumed = await transaction.refreshSession.updateMany({

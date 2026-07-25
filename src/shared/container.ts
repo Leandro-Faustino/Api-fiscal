@@ -27,6 +27,14 @@ import { PrismaRefreshSessionRepository } from '../modules/access/infra/reposito
 import { CreateRefreshSessionUseCase } from '../modules/access/application/use-cases/create-refresh-session.js';
 import { RotateRefreshSessionUseCase } from '../modules/access/application/use-cases/rotate-refresh-session.js';
 import { RevokeRefreshSessionUseCase } from '../modules/access/application/use-cases/revoke-refresh-session.js';
+import type { SecurityRepository } from '../modules/access/application/ports/security-repository.js';
+import type { MfaService } from '../modules/access/application/ports/mfa-service.js';
+import { PrismaSecurityRepository } from '../modules/access/infra/repositories/prisma-security-repository.js';
+import { TotpMfaService } from '../modules/access/infra/security/totp-mfa-service.js';
+import { StartMfaChallengeUseCase } from '../modules/access/application/use-cases/start-mfa-challenge.js';
+import { VerifyMfaChallengeUseCase } from '../modules/access/application/use-cases/verify-mfa-challenge.js';
+import { RequestPasswordResetUseCase } from '../modules/access/application/use-cases/request-password-reset.js';
+import { ResetPasswordUseCase } from '../modules/access/application/use-cases/reset-password.js';
 
 export interface Cradle {
   prismaClient: PrismaClient;
@@ -44,6 +52,18 @@ export interface Cradle {
   refreshTokenTtlDays: number;
   authRateLimitMax: number;
   authRateLimitWindowMs: number;
+  securityRepository: SecurityRepository;
+  mfaService: MfaService;
+  mfaEncryptionKey: string;
+  mfaIssuer: string;
+  mfaChallengeTtlMinutes: number;
+  mfaMaximumAttempts: number;
+  passwordResetTtlMinutes: number;
+  exposeRecoveryTokens: boolean;
+  startMfaChallengeUseCase: StartMfaChallengeUseCase;
+  verifyMfaChallengeUseCase: VerifyMfaChallengeUseCase;
+  requestPasswordResetUseCase: RequestPasswordResetUseCase;
+  resetPasswordUseCase: ResetPasswordUseCase;
   createRefreshSessionUseCase: CreateRefreshSessionUseCase;
   rotateRefreshSessionUseCase: RotateRefreshSessionUseCase;
   revokeRefreshSessionUseCase: RevokeRefreshSessionUseCase;
@@ -76,6 +96,18 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     refreshTokenTtlDays: asValue(env.REFRESH_TOKEN_TTL_DAYS),
     authRateLimitMax: asValue(env.AUTH_RATE_LIMIT_MAX),
     authRateLimitWindowMs: asValue(env.AUTH_RATE_LIMIT_WINDOW_MS),
+    securityRepository: asClass(PrismaSecurityRepository).singleton(),
+    mfaService: asClass(TotpMfaService).singleton(),
+    mfaEncryptionKey: asValue(env.MFA_ENCRYPTION_KEY),
+    mfaIssuer: asValue(env.MFA_ISSUER),
+    mfaChallengeTtlMinutes: asValue(env.MFA_CHALLENGE_TTL_MINUTES),
+    mfaMaximumAttempts: asValue(env.MFA_MAXIMUM_ATTEMPTS),
+    passwordResetTtlMinutes: asValue(env.PASSWORD_RESET_TTL_MINUTES),
+    exposeRecoveryTokens: asValue(env.EXPOSE_RECOVERY_TOKENS),
+    startMfaChallengeUseCase: asClass(StartMfaChallengeUseCase).singleton(),
+    verifyMfaChallengeUseCase: asClass(VerifyMfaChallengeUseCase).singleton(),
+    requestPasswordResetUseCase: asClass(RequestPasswordResetUseCase).singleton(),
+    resetPasswordUseCase: asClass(ResetPasswordUseCase).singleton(),
     createRefreshSessionUseCase: asClass(CreateRefreshSessionUseCase).singleton(),
     rotateRefreshSessionUseCase: asClass(RotateRefreshSessionUseCase).singleton(),
     revokeRefreshSessionUseCase: asClass(RevokeRefreshSessionUseCase).singleton(),

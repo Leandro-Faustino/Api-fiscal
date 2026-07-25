@@ -11,6 +11,10 @@ import type {
 } from '../domain/access.js';
 import { authorize } from '../../../shared/infra/http/authentication.js';
 import type { RefreshTokenResult } from '../application/use-cases/create-refresh-session.js';
+import {
+  requiresMfa,
+  type MfaChallengeResult,
+} from '../application/use-cases/start-mfa-challenge.js';
 
 const roles = ['OWNER', 'ADMIN', 'ACCOUNTANT', 'VIEWER'] as const;
 
@@ -63,6 +67,25 @@ const authResponseSchema = {
   },
 } as const;
 
+const mfaChallengeResponseSchema = {
+  type: 'object',
+  required: ['status', 'challengeToken', 'expiresAt'],
+  properties: {
+    status: {
+      type: 'string',
+      enum: ['MFA_REQUIRED', 'MFA_SETUP_REQUIRED'],
+    },
+    challengeToken: { type: 'string' },
+    expiresAt: { type: 'string', format: 'date-time' },
+    secret: { type: 'string' },
+    otpAuthUri: { type: 'string' },
+  },
+} as const;
+
+const primaryAuthResponseSchema = {
+  oneOf: [authResponseSchema, mfaChallengeResponseSchema],
+} as const;
+
 interface RegisterBody {
   tenantName: string;
   tenantSlug: string;
@@ -95,6 +118,20 @@ interface RefreshTokenBody {
   refreshToken: string;
 }
 
+interface VerifyMfaBody {
+  challengeToken: string;
+  code: string;
+}
+
+interface PasswordResetRequestBody {
+  email: string;
+}
+
+interface PasswordResetBody {
+  token: string;
+  password: string;
+}
+
 async function createAuthResponse(
   reply: FastifyReply,
   session: AccessSession,
@@ -113,6 +150,7 @@ async function createAuthResponse(
     membershipId: session.membershipId,
     tenantId: session.tenantId,
     role: session.role,
+    securityVersion: session.securityVersion,
   });
 
   return {
@@ -123,6 +161,26 @@ async function createAuthResponse(
     expiresIn,
     session,
   };
+}
+
+async function completePrimaryAuthentication(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  cradle: Cradle,
+  session: AccessSession,
+): Promise<
+  | Awaited<ReturnType<typeof createAuthResponse>>
+  | MfaChallengeResult
+> {
+  if (requiresMfa(session)) {
+    return cradle.startMfaChallengeUseCase.execute(session);
+  }
+
+  const refresh = await cradle.createRefreshSessionUseCase.execute(
+    session,
+    sessionMetadata(request),
+  );
+  return createAuthResponse(reply, session, cradle.jwtExpiresIn, refresh);
 }
 
 function sessionMetadata(request: FastifyRequest): {
@@ -175,18 +233,14 @@ export async function accessRoutes(
             password: { type: 'string', minLength: 12, maxLength: 128 },
           },
         },
-        response: { 201: authResponseSchema },
+        response: { 201: primaryAuthResponseSchema },
       },
     },
     async (request, reply) => {
       const session = await cradle.registerTenantUseCase.execute(request.body);
-      const refresh = await cradle.createRefreshSessionUseCase.execute(
-        session,
-        sessionMetadata(request),
-      );
       return reply
         .status(201)
-        .send(await createAuthResponse(reply, session, cradle.jwtExpiresIn, refresh));
+        .send(await completePrimaryAuthentication(request, reply, cradle, session));
     },
   );
 
@@ -207,17 +261,13 @@ export async function accessRoutes(
             password: { type: 'string', minLength: 1, maxLength: 128 },
           },
         },
-        response: { 200: authResponseSchema },
+        response: { 200: primaryAuthResponseSchema },
       },
     },
     async (request, reply) => {
       const session = await cradle.loginUseCase.execute(request.body);
-      const refresh = await cradle.createRefreshSessionUseCase.execute(
-        session,
-        sessionMetadata(request),
-      );
       return reply.send(
-        await createAuthResponse(reply, session, cradle.jwtExpiresIn, refresh),
+        await completePrimaryAuthentication(request, reply, cradle, session),
       );
     },
   );
@@ -245,7 +295,7 @@ export async function accessRoutes(
             password: { type: 'string', minLength: 12, maxLength: 128 },
           },
         },
-        response: { 200: authResponseSchema },
+        response: { 200: primaryAuthResponseSchema },
       },
     },
     async (request, reply) => {
@@ -253,14 +303,131 @@ export async function accessRoutes(
         token: request.params.token,
         ...request.body,
       });
-      const refresh = await cradle.createRefreshSessionUseCase.execute(
-        session,
-        sessionMetadata(request),
-      );
 
       return reply.send(
-        await createAuthResponse(reply, session, cradle.jwtExpiresIn, refresh),
+        await completePrimaryAuthentication(request, reply, cradle, session),
       );
+    },
+  );
+
+  app.post<{ Body: VerifyMfaBody }>(
+    '/v1/auth/mfa/verify',
+    {
+      config: publicAuthRateLimit(cradle),
+      schema: {
+        tags: ['Acesso'],
+        summary: 'Confirmar configuração ou desafio MFA',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['challengeToken', 'code'],
+          properties: {
+            challengeToken: { type: 'string', minLength: 32, maxLength: 128 },
+            code: { type: 'string', minLength: 6, maxLength: 32 },
+          },
+        },
+        response: {
+          200: {
+            ...authResponseSchema,
+            properties: {
+              ...authResponseSchema.properties,
+              recoveryCodes: {
+                type: 'array',
+                items: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const verified = await cradle.verifyMfaChallengeUseCase.execute(
+        request.body.challengeToken,
+        request.body.code,
+      );
+      const refresh = await cradle.createRefreshSessionUseCase.execute(
+        verified.session,
+        sessionMetadata(request),
+      );
+      return reply.send({
+        ...(await createAuthResponse(
+          reply,
+          verified.session,
+          cradle.jwtExpiresIn,
+          refresh,
+        )),
+        recoveryCodes: verified.recoveryCodes,
+      });
+    },
+  );
+
+  app.post<{ Body: PasswordResetRequestBody }>(
+    '/v1/auth/password/forgot',
+    {
+      config: publicAuthRateLimit(cradle),
+      schema: {
+        tags: ['Acesso'],
+        summary: 'Solicitar recuperação de senha',
+        description:
+          'A resposta é idêntica para e-mails cadastrados e não cadastrados. O token só é exposto quando EXPOSE_RECOVERY_TOKENS=true em ambiente controlado.',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['email'],
+          properties: {
+            email: { type: 'string', format: 'email' },
+          },
+        },
+        response: {
+          202: {
+            type: 'object',
+            required: ['accepted', 'expiresAt'],
+            properties: {
+              accepted: { type: 'boolean', enum: [true] },
+              expiresAt: { type: 'string', format: 'date-time' },
+              recoveryToken: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = await cradle.requestPasswordResetUseCase.execute(
+        request.body.email,
+      );
+      return reply.status(202).send({
+        accepted: true,
+        expiresAt: result.expiresAt,
+        recoveryToken: cradle.exposeRecoveryTokens ? result.token : undefined,
+      });
+    },
+  );
+
+  app.post<{ Body: PasswordResetBody }>(
+    '/v1/auth/password/reset',
+    {
+      config: publicAuthRateLimit(cradle),
+      schema: {
+        tags: ['Acesso'],
+        summary: 'Definir nova senha com token de recuperação',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['token', 'password'],
+          properties: {
+            token: { type: 'string', minLength: 32, maxLength: 128 },
+            password: { type: 'string', minLength: 12, maxLength: 128 },
+          },
+        },
+        response: { 204: { type: 'null' } },
+      },
+    },
+    async (request, reply) => {
+      await cradle.resetPasswordUseCase.execute(
+        request.body.token,
+        request.body.password,
+      );
+      return reply.status(204).send();
     },
   );
 

@@ -52,6 +52,7 @@ export interface AccessRepository {
     userId: string,
     membershipId: string,
     tenantId: string,
+    securityVersion: number,
   ): Promise<AuthContext | null>;
   hasPendingInvitation(tenantId: string, email: string): Promise<boolean>;
   createInvitation(input: CreateInvitationInput): Promise<Invitation>;

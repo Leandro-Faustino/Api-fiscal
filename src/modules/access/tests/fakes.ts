@@ -22,6 +22,8 @@ export const sessionFixture: AccessSession = {
   role: 'OWNER',
   email: 'owner@example.com',
   name: 'Owner Teste',
+  securityVersion: 1,
+  mfaEnabled: false,
 };
 
 export class FakeAccessRepository implements AccessRepository {

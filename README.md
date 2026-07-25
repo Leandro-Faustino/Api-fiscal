@@ -10,6 +10,10 @@ API em Node.js/TypeScript para a plataforma de gestão fiscal e inteligência co
 - injeção de dependência com Awilix
 - cadastro de escritório e usuário proprietário
 - autenticação JWT com vínculo e papel validados a cada requisição
+- MFA obrigatório por TOTP para proprietários e administradores
+- códigos de recuperação MFA de uso único
+- recuperação de senha com token de uso único e resposta anti-enumeração
+- invalidação imediata dos JWTs e refresh tokens após redefinição de senha
 - refresh token rotativo, logout e detecção de reutilização de token
 - rate limiting nas rotas públicas de autenticação
 - papéis `OWNER`, `ADMIN`, `ACCOUNTANT` e `VIEWER`
@@ -46,9 +50,13 @@ export POSTGRES_PASSWORD=<senha-local-segura>
 export POSTGRES_DB=<banco-local>
 export DATABASE_URL=<url-postgresql-local>
 export JWT_SECRET=<segredo-aleatorio-com-pelo-menos-32-caracteres>
+export MFA_ENCRYPTION_KEY=<chave-independente-com-pelo-menos-32-caracteres>
+export MFA_ISSUER="API Fiscal"
+export ENABLE_SWAGGER_UI=true
 export REFRESH_TOKEN_TTL_DAYS=30
 export AUTH_RATE_LIMIT_MAX=10
 export AUTH_RATE_LIMIT_WINDOW_MS=60000
+export EXPOSE_RECOVERY_TOKENS=true
 export SEED_OWNER_EMAIL=<email-local>
 export SEED_OWNER_PASSWORD=<senha-local-forte>
 docker compose up -d
@@ -61,7 +69,8 @@ npm run dev
 Acesse:
 
 - API: `http://localhost:3333`
-- Swagger: `http://localhost:3333/docs`
+- Swagger: `http://localhost:3333/docs` quando `ENABLE_SWAGGER_UI=true`
+- OpenAPI JSON: `http://localhost:3333/openapi.json`
 - Saúde: `GET http://localhost:3333/health`
 
 O seed cria o escritório de desenvolvimento e vincula o proprietário informado nas variáveis acima:
@@ -70,7 +79,20 @@ O seed cria o escritório de desenvolvimento e vincula o proprietário informado
 00000000-0000-4000-8000-000000000001
 ```
 
-Exemplo:
+No primeiro login de `OWNER` ou `ADMIN`, a API devolve
+`MFA_SETUP_REQUIRED`, o segredo e a URI `otpauth://`. Depois de adicionar a
+conta ao aplicativo autenticador, confirme o código em
+`POST /v1/auth/mfa/verify`. A resposta contém o JWT, o refresh token e oito
+códigos de recuperação exibidos uma única vez.
+
+`EXPOSE_RECOVERY_TOKENS=true` serve apenas para desenvolvimento enquanto o
+adaptador de e-mail não é conectado. Em produção, mantenha `false`.
+
+Mantenha também `ENABLE_SWAGGER_UI=false` em produção. A interface interativa
+usa um servidor de arquivos e deve ficar restrita ao desenvolvimento; o contrato
+OpenAPI permanece disponível em `/openapi.json`.
+
+Exemplo após concluir o MFA:
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:3333/v1/auth/login \
@@ -107,7 +129,7 @@ unitários, testes de integração, checagem de tipos e build.
 ## Limites desta primeira entrega
 
 - Convites são retornados pela API uma única vez; o envio por e-mail ainda será integrado.
-- Ainda não há recuperação de senha ou MFA.
+- A entrega de convites e tokens de recuperação por e-mail ainda será integrada.
 - O rate limiting atual usa memória do processo; antes de escalar horizontalmente,
   deve usar um armazenamento compartilhado.
 - Sessões expiradas precisam de uma rotina periódica de limpeza e política de retenção.

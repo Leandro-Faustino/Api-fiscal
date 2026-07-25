@@ -37,6 +37,8 @@ const sessionSelect = {
       id: true,
       name: true,
       email: true,
+      securityVersion: true,
+      mfaEnabledAt: true,
     },
   },
 } satisfies Prisma.MembershipSelect;
@@ -53,6 +55,8 @@ function toSession(record: SessionRecord): AccessSession {
     role: record.role,
     email: record.user.email,
     name: record.user.name,
+    securityVersion: record.user.securityVersion,
+    mfaEnabled: record.user.mfaEnabledAt !== null,
   };
 }
 
@@ -173,6 +177,7 @@ export class PrismaAccessRepository implements AccessRepository {
     userId: string,
     membershipId: string,
     tenantId: string,
+    securityVersion: number,
   ): Promise<AuthContext | null> {
     const membership = await this.prisma.membership.findFirst({
       where: {
@@ -180,7 +185,7 @@ export class PrismaAccessRepository implements AccessRepository {
         tenantId,
         userId,
         status: 'ACTIVE',
-        user: { status: 'ACTIVE' },
+        user: { status: 'ACTIVE', securityVersion },
       },
       select: sessionSelect,
     });

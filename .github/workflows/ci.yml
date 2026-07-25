@@ -33,6 +33,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://api_fiscal:integration_password@127.0.0.1:5432/api_fiscal_test
       JWT_SECRET: ci-only-secret-with-at-least-32-characters
+      MFA_ENCRYPTION_KEY: ci-only-mfa-encryption-key-with-at-least-32-characters
 
     steps:
       - name: Checkout
@@ -61,6 +62,9 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Integration tests
         run: npm run test:integration

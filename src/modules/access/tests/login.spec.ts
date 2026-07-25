@@ -6,8 +6,12 @@ import { FakeAccessRepository, sessionFixture } from './fakes.js';
 describe('LoginUseCase', () => {
   it('autentica vínculo ativo e registra o acesso', async () => {
     const accessRepository = new FakeAccessRepository();
-    accessRepository.loginRecord = {
+    const accountantSession = {
       ...sessionFixture,
+      role: 'ACCOUNTANT' as const,
+    };
+    accessRepository.loginRecord = {
+      ...accountantSession,
       passwordHash: 'hash',
       userStatus: 'ACTIVE',
       membershipStatus: 'ACTIVE',
@@ -24,7 +28,7 @@ describe('LoginUseCase', () => {
       tenantSlug: 'escritorio-teste',
     });
 
-    expect(session).toEqual(sessionFixture);
+    expect(session).toEqual(accountantSession);
     expect(accessRepository.successfulLogin).toEqual({
       userId: sessionFixture.userId,
       tenantId: sessionFixture.tenantId,

@@ -9,12 +9,14 @@ declare module '@fastify/jwt' {
       membershipId: string;
       tenantId: string;
       role: MembershipRole;
+      securityVersion: number;
     };
     user: {
       sub: string;
       membershipId: string;
       tenantId: string;
       role: MembershipRole;
+      securityVersion: number;
     };
   }
 }

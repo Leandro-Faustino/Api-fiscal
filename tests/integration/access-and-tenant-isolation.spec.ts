@@ -8,6 +8,7 @@ import type {
   CompanyRegistryGateway,
 } from '../../src/modules/control/companies/application/ports/company-registry-gateway.js';
 import { createApplicationContainer } from '../../src/shared/container.js';
+import { generateTotpCode } from '../../src/modules/access/infra/security/totp-mfa-service.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -32,6 +33,13 @@ const env: Env = {
   REFRESH_TOKEN_TTL_DAYS: 30,
   AUTH_RATE_LIMIT_MAX: 100,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
+  ENABLE_SWAGGER_UI: false,
+  MFA_ENCRYPTION_KEY: 'integration-mfa-encryption-key-32-characters',
+  MFA_ISSUER: 'API Fiscal Integration',
+  MFA_CHALLENGE_TTL_MINUTES: 5,
+  MFA_MAXIMUM_ATTEMPTS: 5,
+  PASSWORD_RESET_TTL_MINUTES: 15,
+  EXPOSE_RECOVERY_TOKENS: true,
   INVITATION_TTL_HOURS: 72,
   COMPANY_REGISTRY_BASE_URL: 'https://registry.invalid',
   COMPANY_REGISTRY_TIMEOUT_MS: 1_000,
@@ -64,9 +72,18 @@ interface AuthResponse {
   };
 }
 
+interface MfaSetupResponse {
+  status: 'MFA_SETUP_REQUIRED';
+  challengeToken: string;
+  secret: string;
+}
+
 async function cleanDatabase(): Promise<void> {
   await prisma.auditLog.deleteMany();
   await prisma.refreshSession.deleteMany();
+  await prisma.mfaChallenge.deleteMany();
+  await prisma.mfaRecoveryCode.deleteMany();
+  await prisma.passwordResetToken.deleteMany();
   await prisma.invitation.deleteMany();
   await prisma.company.deleteMany();
   await prisma.membership.deleteMany();
@@ -99,7 +116,23 @@ async function registerOwner(
   });
 
   expect(response.statusCode).toBe(201);
-  return response.json<AuthResponse>();
+  const setup = response.json<MfaSetupResponse>();
+  expect(setup.status).toBe('MFA_SETUP_REQUIRED');
+
+  const verification = await app.inject({
+    method: 'POST',
+    url: '/v1/auth/mfa/verify',
+    payload: {
+      challengeToken: setup.challengeToken,
+      code: generateTotpCode(setup.secret),
+    },
+  });
+
+  expect(verification.statusCode).toBe(200);
+  expect(verification.json()).toMatchObject({
+    recoveryCodes: expect.any(Array),
+  });
+  return verification.json<AuthResponse>();
 }
 
 beforeAll(async () => {
@@ -191,6 +224,51 @@ describe('autenticação e isolamento multiempresa', () => {
     });
     expect(revokedFamily.statusCode).toBe(401);
     expect(revokedFamily.json()).toMatchObject({
+      error: { code: 'REFRESH_TOKEN_REVOKED' },
+    });
+
+    await app.close();
+  });
+
+  it('redefine a senha e invalida imediatamente access e refresh tokens anteriores', async () => {
+    const app = await createTestApp();
+    const auth = await registerOwner(app, 'Recuperacao');
+
+    const requestReset = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/password/forgot',
+      payload: { email: 'owner-recuperacao@example.com' },
+    });
+    expect(requestReset.statusCode).toBe(202);
+    const recoveryToken = requestReset.json<{ recoveryToken: string }>().recoveryToken;
+
+    const reset = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/password/reset',
+      payload: {
+        token: recoveryToken,
+        password: 'OutraSenhaSegura123',
+      },
+    });
+    expect(reset.statusCode).toBe(204);
+
+    const staleAccess = await app.inject({
+      method: 'GET',
+      url: '/v1/auth/me',
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+    });
+    expect(staleAccess.statusCode).toBe(401);
+    expect(staleAccess.json()).toMatchObject({
+      error: { code: 'ACCESS_REVOKED' },
+    });
+
+    const staleRefresh = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/refresh',
+      payload: { refreshToken: auth.refreshToken },
+    });
+    expect(staleRefresh.statusCode).toBe(401);
+    expect(staleRefresh.json()).toMatchObject({
       error: { code: 'REFRESH_TOKEN_REVOKED' },
     });
 

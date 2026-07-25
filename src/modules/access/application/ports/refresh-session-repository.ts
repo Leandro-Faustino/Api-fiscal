@@ -20,7 +20,15 @@ export interface RotateRefreshSessionInput extends RefreshSessionMetadata {
 
 export type RotateRefreshSessionResult =
   | { status: 'ROTATED'; session: AccessSession }
-  | { status: 'NOT_FOUND' | 'EXPIRED' | 'REVOKED' | 'REUSED' | 'BLOCKED' };
+  | {
+      status:
+        | 'NOT_FOUND'
+        | 'EXPIRED'
+        | 'REVOKED'
+        | 'REUSED'
+        | 'BLOCKED'
+        | 'MFA_REQUIRED';
+    };
 
 export interface RefreshSessionRepository {
   create(input: CreateRefreshSessionInput): Promise<void>;
