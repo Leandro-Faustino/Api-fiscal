@@ -25,7 +25,7 @@ const env: Env = {
   NODE_ENV: 'test',
   HOST: '127.0.0.1',
   PORT: 3333,
-  LOG_LEVEL: 'silent',
+  LOG_LEVEL: 'error',
   DATABASE_URL: databaseUrl,
   JWT_SECRET: 'integration-secret-with-at-least-32-characters',
   JWT_ISSUER: 'api-fiscal-integration',
