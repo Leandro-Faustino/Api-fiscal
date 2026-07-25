@@ -25,6 +25,16 @@ export function registerErrorHandler(app: FastifyInstance): void {
       });
     }
 
+    if (error.statusCode === 429) {
+      return reply.status(429).send({
+        error: {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Muitas tentativas. Aguarde antes de tentar novamente.',
+          requestId: request.id,
+        },
+      });
+    }
+
     request.log.error({ err: error }, 'Unhandled request error');
 
     return reply.status(500).send({

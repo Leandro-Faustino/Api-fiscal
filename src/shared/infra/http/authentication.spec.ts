@@ -1,8 +1,10 @@
 import { afterAll, describe, expect, it } from 'vitest';
+import { asValue } from 'awilix';
 import { buildApp } from '../../../app.js';
 import type { Env } from '../../../config/env.js';
 import { createApplicationContainer } from '../../container.js';
 import { prisma } from '../database/prisma-client.js';
+import { FakeAccessRepository } from '../../../modules/access/tests/fakes.js';
 
 const env: Env = {
   NODE_ENV: 'test',
@@ -14,6 +16,9 @@ const env: Env = {
   JWT_ISSUER: 'api-fiscal-test',
   JWT_AUDIENCE: 'api-fiscal-test-client',
   JWT_EXPIRES_IN: '15m',
+  REFRESH_TOKEN_TTL_DAYS: 30,
+  AUTH_RATE_LIMIT_MAX: 100,
+  AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   INVITATION_TTL_HOURS: 72,
   COMPANY_REGISTRY_BASE_URL: 'https://brasilapi.com.br/api/cnpj/v1',
   COMPANY_REGISTRY_TIMEOUT_MS: 5_000,
@@ -41,6 +46,42 @@ describe('fronteira HTTP autenticada', () => {
     expect(protectedRoute.statusCode).toBe(401);
     expect(protectedRoute.json()).toMatchObject({
       error: { code: 'UNAUTHORIZED' },
+    });
+
+    await app.close();
+  });
+
+  it('limita tentativas repetidas nas rotas públicas de autenticação', async () => {
+    const container = createApplicationContainer(
+      { ...env, AUTH_RATE_LIMIT_MAX: 2 },
+      prisma,
+    );
+    container.register({
+      accessRepository: asValue(new FakeAccessRepository()),
+    });
+    const app = await buildApp({
+      env: { ...env, AUTH_RATE_LIMIT_MAX: 2 },
+      container,
+    });
+    const request = {
+      method: 'POST' as const,
+      url: '/v1/auth/login',
+      payload: {
+        tenantSlug: 'escritorio-teste',
+        email: 'owner@example.com',
+        password: 'incorreta',
+      },
+    };
+
+    const first = await app.inject(request);
+    const second = await app.inject(request);
+    const blocked = await app.inject(request);
+
+    expect(first.statusCode).toBe(401);
+    expect(second.statusCode).toBe(401);
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.json()).toMatchObject({
+      error: { code: 'RATE_LIMIT_EXCEEDED' },
     });
 
     await app.close();

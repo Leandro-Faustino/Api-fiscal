@@ -10,6 +10,8 @@ API em Node.js/TypeScript para a plataforma de gestão fiscal e inteligência co
 - injeção de dependência com Awilix
 - cadastro de escritório e usuário proprietário
 - autenticação JWT com vínculo e papel validados a cada requisição
+- refresh token rotativo, logout e detecção de reutilização de token
+- rate limiting nas rotas públicas de autenticação
 - papéis `OWNER`, `ADMIN`, `ACCOUNTANT` e `VIEWER`
 - convite de usuários com token de uso único armazenado como hash
 - senhas derivadas com `scrypt` e salt individual
@@ -44,6 +46,9 @@ export POSTGRES_PASSWORD=<senha-local-segura>
 export POSTGRES_DB=<banco-local>
 export DATABASE_URL=<url-postgresql-local>
 export JWT_SECRET=<segredo-aleatorio-com-pelo-menos-32-caracteres>
+export REFRESH_TOKEN_TTL_DAYS=30
+export AUTH_RATE_LIMIT_MAX=10
+export AUTH_RATE_LIMIT_WINDOW_MS=60000
 export SEED_OWNER_EMAIL=<email-local>
 export SEED_OWNER_PASSWORD=<senha-local-forte>
 docker compose up -d
@@ -91,13 +96,21 @@ O `tenantId` e o autor da operação são derivados do token autenticado. Eles n
 ```bash
 npm run lint
 npm test
+npm run test:integration
 npm run build
 ```
+
+`npm run test:integration` exige PostgreSQL com as migrações aplicadas. No GitHub,
+o workflow de CI sobe um banco isolado e executa schema, migrações, testes
+unitários, testes de integração, checagem de tipos e build.
 
 ## Limites desta primeira entrega
 
 - Convites são retornados pela API uma única vez; o envio por e-mail ainda será integrado.
-- Ainda não há recuperação de senha, MFA, rotação de refresh token ou rate limiting.
+- Ainda não há recuperação de senha ou MFA.
+- O rate limiting atual usa memória do processo; antes de escalar horizontalmente,
+  deve usar um armazenamento compartilhado.
+- Sessões expiradas precisam de uma rotina periódica de limpeza e política de retenção.
 - As credenciais locais devem ser fornecidas por variáveis de ambiente e nunca versionadas.
 - A BrasilAPI é o primeiro adaptador de consulta cadastral, não uma garantia de fonte oficial ou SLA de produção.
 - Nenhuma faixa, alíquota, sublimite ou prazo fiscal foi codificado.

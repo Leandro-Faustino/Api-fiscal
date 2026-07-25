@@ -22,6 +22,11 @@ import { AcceptInvitationUseCase } from '../modules/access/application/use-cases
 import { ListMembersUseCase } from '../modules/access/application/use-cases/list-members.js';
 import { PrismaAccessRepository } from '../modules/access/infra/repositories/prisma-access-repository.js';
 import { ScryptPasswordHasher } from '../modules/access/infra/security/scrypt-password-hasher.js';
+import type { RefreshSessionRepository } from '../modules/access/application/ports/refresh-session-repository.js';
+import { PrismaRefreshSessionRepository } from '../modules/access/infra/repositories/prisma-refresh-session-repository.js';
+import { CreateRefreshSessionUseCase } from '../modules/access/application/use-cases/create-refresh-session.js';
+import { RotateRefreshSessionUseCase } from '../modules/access/application/use-cases/rotate-refresh-session.js';
+import { RevokeRefreshSessionUseCase } from '../modules/access/application/use-cases/revoke-refresh-session.js';
 
 export interface Cradle {
   prismaClient: PrismaClient;
@@ -35,6 +40,13 @@ export interface Cradle {
   passwordHasher: PasswordHasher;
   invitationTtlHours: number;
   jwtExpiresIn: string;
+  refreshSessionRepository: RefreshSessionRepository;
+  refreshTokenTtlDays: number;
+  authRateLimitMax: number;
+  authRateLimitWindowMs: number;
+  createRefreshSessionUseCase: CreateRefreshSessionUseCase;
+  rotateRefreshSessionUseCase: RotateRefreshSessionUseCase;
+  revokeRefreshSessionUseCase: RevokeRefreshSessionUseCase;
   registerTenantUseCase: RegisterTenantUseCase;
   loginUseCase: LoginUseCase;
   createInvitationUseCase: CreateInvitationUseCase;
@@ -60,6 +72,13 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     passwordHasher: asClass(ScryptPasswordHasher).singleton(),
     invitationTtlHours: asValue(env.INVITATION_TTL_HOURS),
     jwtExpiresIn: asValue(env.JWT_EXPIRES_IN),
+    refreshSessionRepository: asClass(PrismaRefreshSessionRepository).singleton(),
+    refreshTokenTtlDays: asValue(env.REFRESH_TOKEN_TTL_DAYS),
+    authRateLimitMax: asValue(env.AUTH_RATE_LIMIT_MAX),
+    authRateLimitWindowMs: asValue(env.AUTH_RATE_LIMIT_WINDOW_MS),
+    createRefreshSessionUseCase: asClass(CreateRefreshSessionUseCase).singleton(),
+    rotateRefreshSessionUseCase: asClass(RotateRefreshSessionUseCase).singleton(),
+    revokeRefreshSessionUseCase: asClass(RevokeRefreshSessionUseCase).singleton(),
     registerTenantUseCase: asClass(RegisterTenantUseCase).singleton(),
     loginUseCase: asClass(LoginUseCase).singleton(),
     createInvitationUseCase: asClass(CreateInvitationUseCase).singleton(),

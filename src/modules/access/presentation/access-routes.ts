@@ -1,6 +1,7 @@
 import type {
   FastifyInstance,
   FastifyReply,
+  FastifyRequest,
   preHandlerHookHandler,
 } from 'fastify';
 import type { Cradle } from '../../../shared/container.js';
@@ -9,6 +10,7 @@ import type {
   MembershipRole,
 } from '../domain/access.js';
 import { authorize } from '../../../shared/infra/http/authentication.js';
+import type { RefreshTokenResult } from '../application/use-cases/create-refresh-session.js';
 
 const roles = ['OWNER', 'ADMIN', 'ACCOUNTANT', 'VIEWER'] as const;
 
@@ -36,9 +38,18 @@ const authContextSchema = {
 
 const authResponseSchema = {
   type: 'object',
-  required: ['accessToken', 'tokenType', 'expiresIn', 'session'],
+  required: [
+    'accessToken',
+    'refreshToken',
+    'refreshExpiresAt',
+    'tokenType',
+    'expiresIn',
+    'session',
+  ],
   properties: {
     accessToken: { type: 'string' },
+    refreshToken: { type: 'string' },
+    refreshExpiresAt: { type: 'string', format: 'date-time' },
     tokenType: { type: 'string', enum: ['Bearer'] },
     expiresIn: { type: 'string' },
     session: {
@@ -80,12 +91,19 @@ interface AcceptInvitationBody {
   password: string;
 }
 
+interface RefreshTokenBody {
+  refreshToken: string;
+}
+
 async function createAuthResponse(
   reply: FastifyReply,
   session: AccessSession,
   expiresIn: string,
+  refresh: RefreshTokenResult,
 ): Promise<{
   accessToken: string;
+  refreshToken: string;
+  refreshExpiresAt: Date;
   tokenType: 'Bearer';
   expiresIn: string;
   session: AccessSession;
@@ -99,9 +117,32 @@ async function createAuthResponse(
 
   return {
     accessToken,
+    refreshToken: refresh.refreshToken,
+    refreshExpiresAt: refresh.refreshExpiresAt,
     tokenType: 'Bearer',
     expiresIn,
     session,
+  };
+}
+
+function sessionMetadata(request: FastifyRequest): {
+  ipAddress: string;
+  userAgent: string | null;
+} {
+  return {
+    ipAddress: request.ip,
+    userAgent: request.headers['user-agent'] ?? null,
+  };
+}
+
+function publicAuthRateLimit(cradle: Cradle): {
+  rateLimit: { max: number; timeWindow: number };
+} {
+  return {
+    rateLimit: {
+      max: cradle.authRateLimitMax,
+      timeWindow: cradle.authRateLimitWindowMs,
+    },
   };
 }
 
@@ -113,6 +154,7 @@ export async function accessRoutes(
   app.post<{ Body: RegisterBody }>(
     '/v1/auth/register',
     {
+      config: publicAuthRateLimit(cradle),
       schema: {
         tags: ['Acesso'],
         summary: 'Criar escritório e usuário proprietário',
@@ -138,15 +180,20 @@ export async function accessRoutes(
     },
     async (request, reply) => {
       const session = await cradle.registerTenantUseCase.execute(request.body);
+      const refresh = await cradle.createRefreshSessionUseCase.execute(
+        session,
+        sessionMetadata(request),
+      );
       return reply
         .status(201)
-        .send(await createAuthResponse(reply, session, cradle.jwtExpiresIn));
+        .send(await createAuthResponse(reply, session, cradle.jwtExpiresIn, refresh));
     },
   );
 
   app.post<{ Body: LoginBody }>(
     '/v1/auth/login',
     {
+      config: publicAuthRateLimit(cradle),
       schema: {
         tags: ['Acesso'],
         summary: 'Entrar em um escritório',
@@ -165,13 +212,20 @@ export async function accessRoutes(
     },
     async (request, reply) => {
       const session = await cradle.loginUseCase.execute(request.body);
-      return reply.send(await createAuthResponse(reply, session, cradle.jwtExpiresIn));
+      const refresh = await cradle.createRefreshSessionUseCase.execute(
+        session,
+        sessionMetadata(request),
+      );
+      return reply.send(
+        await createAuthResponse(reply, session, cradle.jwtExpiresIn, refresh),
+      );
     },
   );
 
   app.post<{ Params: InvitationParams; Body: AcceptInvitationBody }>(
     '/v1/auth/invitations/:token/accept',
     {
+      config: publicAuthRateLimit(cradle),
       schema: {
         tags: ['Acesso'],
         summary: 'Aceitar convite de acesso ao escritório',
@@ -199,8 +253,70 @@ export async function accessRoutes(
         token: request.params.token,
         ...request.body,
       });
+      const refresh = await cradle.createRefreshSessionUseCase.execute(
+        session,
+        sessionMetadata(request),
+      );
 
-      return reply.send(await createAuthResponse(reply, session, cradle.jwtExpiresIn));
+      return reply.send(
+        await createAuthResponse(reply, session, cradle.jwtExpiresIn, refresh),
+      );
+    },
+  );
+
+  app.post<{ Body: RefreshTokenBody }>(
+    '/v1/auth/refresh',
+    {
+      config: publicAuthRateLimit(cradle),
+      schema: {
+        tags: ['Acesso'],
+        summary: 'Renovar sessão com rotação do refresh token',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['refreshToken'],
+          properties: {
+            refreshToken: { type: 'string', minLength: 64, maxLength: 128 },
+          },
+        },
+        response: { 200: authResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const result = await cradle.rotateRefreshSessionUseCase.execute(
+        request.body.refreshToken,
+        sessionMetadata(request),
+      );
+
+      return reply.send(
+        await createAuthResponse(reply, result.session, cradle.jwtExpiresIn, result),
+      );
+    },
+  );
+
+  app.post<{ Body: RefreshTokenBody }>(
+    '/v1/auth/logout',
+    {
+      config: publicAuthRateLimit(cradle),
+      schema: {
+        tags: ['Acesso'],
+        summary: 'Encerrar a família da sessão',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['refreshToken'],
+          properties: {
+            refreshToken: { type: 'string', minLength: 64, maxLength: 128 },
+          },
+        },
+        response: {
+          204: { type: 'null' },
+        },
+      },
+    },
+    async (request, reply) => {
+      await cradle.revokeRefreshSessionUseCase.execute(request.body.refreshToken);
+      return reply.status(204).send();
     },
   );
 

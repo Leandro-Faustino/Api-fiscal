@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import jwt from '@fastify/jwt';
+import rateLimit from '@fastify/rate-limit';
 import type { AwilixContainer } from 'awilix';
 import type { Env } from './config/env.js';
 import type { Cradle } from './shared/container.js';
@@ -68,6 +69,12 @@ export async function buildApp({ env, container }: BuildAppOptions): Promise<Fas
       allowedIss: env.JWT_ISSUER,
       allowedAud: env.JWT_AUDIENCE,
     },
+  });
+
+  await app.register(rateLimit, {
+    global: false,
+    max: env.AUTH_RATE_LIMIT_MAX,
+    timeWindow: env.AUTH_RATE_LIMIT_WINDOW_MS,
   });
 
   const authenticate = registerAuthentication(app, container.cradle);

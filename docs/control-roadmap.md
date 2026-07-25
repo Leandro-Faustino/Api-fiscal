@@ -24,6 +24,10 @@ O plano Control é grande demais para uma única entrega. A implementação ser�
 
 - Cadastro público cria escritório, proprietário e vínculo em uma única transação.
 - Login emite JWT curto com contexto de escritório.
+- Refresh token é rotativo, armazenado somente como hash e revogado por família
+  quando há tentativa de reutilização.
+- Logout revoga a família da sessão.
+- Rotas públicas de autenticação possuem rate limiting.
 - Cada requisição protegida revalida usuário e vínculo ativos no banco.
 - Convites têm token de uso único armazenado como hash e validade parametrizada.
 - Papéis: proprietário, administrador, contador e consulta.
@@ -31,4 +35,8 @@ O plano Control é grande demais para uma única entrega. A implementação ser�
 
 ## Próxima entrega recomendada
 
-Implementar recuperação segura de senha, MFA para papéis privilegiados, refresh token rotativo e rate limiting antes de disponibilizar a autenticação publicamente. Depois disso, iniciar a Etapa 1 com importação idempotente de documentos.
+Implementar recuperação segura de senha e MFA para papéis privilegiados antes de
+disponibilizar a autenticação publicamente. Também substituir o armazenamento em
+memória do rate limiting por Redis quando houver mais de uma instância e definir a
+limpeza/retenção de sessões expiradas. Depois disso, iniciar a Etapa 1 com importação
+idempotente de documentos.
