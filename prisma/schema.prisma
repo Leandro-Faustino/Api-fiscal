@@ -26,17 +26,88 @@ enum CompanyDataSource {
   MANUAL
 }
 
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  ACCOUNTANT
+  VIEWER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+}
+
 model Tenant {
-  id        String     @id @default(uuid()) @db.Uuid
-  name      String
-  slug      String     @unique
-  plan      Plan       @default(CONTROL)
-  companies Company[]
-  auditLogs AuditLog[]
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String       @unique
+  plan        Plan         @default(CONTROL)
+  companies   Company[]
+  memberships Membership[]
+  invitations Invitation[]
+  auditLogs   AuditLog[]
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
 
   @@map("tenants")
+}
+
+model User {
+  id                 String       @id @default(uuid()) @db.Uuid
+  name               String
+  email              String       @unique
+  passwordHash       String       @map("password_hash")
+  status             UserStatus   @default(ACTIVE)
+  lastLoginAt        DateTime?    @map("last_login_at")
+  memberships        Membership[]
+  createdInvitations Invitation[] @relation("InvitationCreator")
+  auditLogs          AuditLog[]   @relation("AuditActor")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("users")
+}
+
+model Membership {
+  id        String           @id @default(uuid()) @db.Uuid
+  tenantId  String           @map("tenant_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  role      MembershipRole
+  status    MembershipStatus @default(ACTIVE)
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  @@unique([tenantId, userId])
+  @@index([userId, status])
+  @@index([tenantId, status])
+  @@map("memberships")
+}
+
+model Invitation {
+  id          String         @id @default(uuid()) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
+  email       String
+  role        MembershipRole
+  tokenHash   String         @unique @map("token_hash")
+  expiresAt   DateTime       @map("expires_at")
+  acceptedAt  DateTime?      @map("accepted_at")
+  createdById String         @map("created_by_id") @db.Uuid
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User           @relation("InvitationCreator", fields: [createdById], references: [id])
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@index([tenantId, email, acceptedAt])
+  @@index([expiresAt])
+  @@map("invitations")
 }
 
 model Company {
@@ -73,6 +144,7 @@ model AuditLog {
   metadata   Json?
   occurredAt DateTime @default(now()) @map("occurred_at")
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, occurredAt])
   @@index([entityType, entityId])

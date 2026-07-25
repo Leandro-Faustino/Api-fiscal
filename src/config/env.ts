@@ -6,6 +6,11 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().max(65_535).default(3333),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   DATABASE_URL: z.string().min(1),
+  JWT_SECRET: z.string().min(32),
+  JWT_ISSUER: z.string().default('api-fiscal'),
+  JWT_AUDIENCE: z.string().default('api-fiscal-web'),
+  JWT_EXPIRES_IN: z.string().default('15m'),
+  INVITATION_TTL_HOURS: z.coerce.number().int().positive().max(168).default(72),
   COMPANY_REGISTRY_BASE_URL: z.url().default('https://brasilapi.com.br/api/cnpj/v1'),
   COMPANY_REGISTRY_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
 });

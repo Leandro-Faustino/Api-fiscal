@@ -28,6 +28,18 @@ export class ConflictError extends AppError {
   }
 }
 
+export class UnauthorizedError extends AppError {
+  public constructor(message = 'Autenticação necessária.', code = 'UNAUTHORIZED') {
+    super(message, code, 401);
+  }
+}
+
+export class ForbiddenError extends AppError {
+  public constructor(message = 'Você não tem permissão para executar esta operação.') {
+    super(message, 'FORBIDDEN', 403);
+  }
+}
+
 export class ExternalServiceError extends AppError {
   public constructor(message: string, details?: Record<string, unknown>) {
     super(message, 'EXTERNAL_SERVICE_UNAVAILABLE', 503, details);

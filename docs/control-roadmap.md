@@ -5,6 +5,7 @@ O plano Control é grande demais para uma única entrega. A implementação ser�
 | Etapa | Capacidades | Resultado |
 |---|---|---|
 | 0 | F52, F33 básica e RNF-03 | Cadastro multiempresa, auditoria e base para parâmetros por vigência |
+| Fundação de acesso | Autenticação, usuários, escritórios, vínculos e RBAC | Contexto autenticado e isolamento por escritório sem `tenantId` controlado pelo cliente |
 | 1 | F01, F02 e F06 arquivo | Captura/importação, cofre e exportação contábil |
 | 2 | F03 e F04 | Radar e-CAC e gestão segura de acessos |
 | 3 | F34, F44, F45, F46 e F51 | Prazos, guias, parcelamentos, declarações e orçamento |
@@ -19,6 +20,15 @@ O plano Control é grande demais para uma única entrega. A implementação ser�
 - Operações multiempresa sempre exigirão o identificador do escritório e autorização no contexto autenticado.
 - Cadastro automático por CNPJ usa uma porta de integração substituível. O primeiro adaptador usa BrasilAPI; antes de produção será necessário definir SLA, limites e fornecedor principal/contingência.
 
+## Fundação de acesso concluída
+
+- Cadastro público cria escritório, proprietário e vínculo em uma única transação.
+- Login emite JWT curto com contexto de escritório.
+- Cada requisição protegida revalida usuário e vínculo ativos no banco.
+- Convites têm token de uso único armazenado como hash e validade parametrizada.
+- Papéis: proprietário, administrador, contador e consulta.
+- F52 deriva escritório e autor do contexto autenticado.
+
 ## Próxima entrega recomendada
 
-Adicionar autenticação, usuários, vínculos com escritórios e autorização por papel. Isso fecha a fundação necessária antes de persistir certificados, procurações, documentos fiscais ou dados de IRPF.
+Implementar recuperação segura de senha, MFA para papéis privilegiados, refresh token rotativo e rate limiting antes de disponibilizar a autenticação publicamente. Depois disso, iniciar a Etapa 1 com importação idempotente de documentos.
