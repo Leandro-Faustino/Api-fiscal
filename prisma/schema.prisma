@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  CONTROL
+  FLOW
+  ESSENTIAL
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  CLOSED
+  UNKNOWN
+}
+
+enum CompanyDataSource {
+  BRASIL_API
+  MANUAL
+}
+
+model Tenant {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String     @unique
+  plan      Plan       @default(CONTROL)
+  companies Company[]
+  auditLogs AuditLog[]
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@map("tenants")
+}
+
+model Company {
+  id                String            @id @default(uuid()) @db.Uuid
+  tenantId          String            @map("tenant_id") @db.Uuid
+  cnpj              String            @db.Char(14)
+  legalName         String            @map("legal_name")
+  tradeName         String?           @map("trade_name")
+  registrationStatus CompanyStatus    @default(UNKNOWN) @map("registration_status")
+  openingDate       DateTime?         @map("opening_date") @db.Date
+  primaryCnae       String?           @map("primary_cnae")
+  primaryCnaeDescription String?       @map("primary_cnae_description")
+  municipality      String?
+  state             String?           @db.Char(2)
+  dataSource        CompanyDataSource @map("data_source")
+  registryUpdatedAt DateTime?         @map("registry_updated_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, cnpj])
+  @@index([tenantId])
+  @@index([registrationStatus])
+  @@map("companies")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  metadata   Json?
+  occurredAt DateTime @default(now()) @map("occurred_at")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, occurredAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model TaxParameterVersion {
+  id            String   @id @default(uuid()) @db.Uuid
+  parameterType String   @map("parameter_type")
+  jurisdiction  String
+  validFrom     DateTime @map("valid_from") @db.Date
+  validUntil    DateTime? @map("valid_until") @db.Date
+  sourceUrl     String   @map("source_url")
+  sourceHash    String   @map("source_hash")
+  payload       Json
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([parameterType, jurisdiction, validFrom])
+  @@index([parameterType, jurisdiction, validFrom])
+  @@map("tax_parameter_versions")
+}

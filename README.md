@@ -33,8 +33,11 @@ O Prisma e a integração externa ficam nos adaptadores. Os casos de uso depende
 Pré-requisitos: Node.js 22+, Docker e Docker Compose.
 
 ```bash
-cp .env.example .env
 npm install
+export POSTGRES_USER=<usuario-local>
+export POSTGRES_PASSWORD=<senha-local-segura>
+export POSTGRES_DB=<banco-local>
+export DATABASE_URL=<url-postgresql-local>
 docker compose up -d
 npm run prisma:generate
 npm run db:migrate -- --name init
@@ -76,6 +79,7 @@ npm run build
 ## Limites desta primeira entrega
 
 - Ainda não há autenticação e autorização; o `tenantId` é informado na requisição apenas para desenvolvimento.
+- As credenciais locais devem ser fornecidas por variáveis de ambiente e nunca versionadas.
 - A BrasilAPI é o primeiro adaptador de consulta cadastral, não uma garantia de fonte oficial ou SLA de produção.
 - Nenhuma faixa, alíquota, sublimite ou prazo fiscal foi codificado.
 - Os demais itens do Control estão priorizados em [docs/control-roadmap.md](docs/control-roadmap.md).
