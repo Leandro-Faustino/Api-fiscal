@@ -1,0 +1,245 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  CONTROL
+  FLOW
+  ESSENTIAL
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  CLOSED
+  UNKNOWN
+}
+
+enum CompanyDataSource {
+  BRASIL_API
+  MANUAL
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  ACCOUNTANT
+  VIEWER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum MfaChallengeType {
+  LOGIN
+  SETUP
+}
+
+model Tenant {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String       @unique
+  plan        Plan         @default(CONTROL)
+  companies   Company[]
+  memberships Membership[]
+  invitations Invitation[]
+  auditLogs   AuditLog[]
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@map("tenants")
+}
+
+model User {
+  id                  String               @id @default(uuid()) @db.Uuid
+  name                String
+  email               String               @unique
+  passwordHash        String               @map("password_hash")
+  status              UserStatus           @default(ACTIVE)
+  securityVersion     Int                  @default(1) @map("security_version")
+  mfaEnabledAt        DateTime?            @map("mfa_enabled_at")
+  mfaSecretEncrypted  String?              @map("mfa_secret_encrypted")
+  lastLoginAt         DateTime?            @map("last_login_at")
+  memberships         Membership[]
+  createdInvitations  Invitation[]         @relation("InvitationCreator")
+  auditLogs           AuditLog[]           @relation("AuditActor")
+  mfaChallenges       MfaChallenge[]
+  mfaRecoveryCodes    MfaRecoveryCode[]
+  passwordResetTokens PasswordResetToken[]
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("users")
+}
+
+model Membership {
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.Uuid
+  userId          String           @map("user_id") @db.Uuid
+  role            MembershipRole
+  status          MembershipStatus @default(ACTIVE)
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshSessions RefreshSession[]
+  mfaChallenges   MfaChallenge[]
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  @@unique([tenantId, userId])
+  @@index([userId, status])
+  @@index([tenantId, status])
+  @@map("memberships")
+}
+
+model MfaChallenge {
+  id              String           @id @default(uuid()) @db.Uuid
+  type            MfaChallengeType
+  tokenHash       String           @unique @map("token_hash")
+  userId          String           @map("user_id") @db.Uuid
+  membershipId    String           @map("membership_id") @db.Uuid
+  secretEncrypted String?          @map("secret_encrypted")
+  expiresAt       DateTime         @map("expires_at")
+  consumedAt      DateTime?        @map("consumed_at")
+  failedAttempts  Int              @default(0) @map("failed_attempts")
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership      Membership       @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, type, consumedAt])
+  @@index([expiresAt])
+  @@map("mfa_challenges")
+}
+
+model MfaRecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @unique @map("code_hash")
+  usedAt    DateTime? @map("used_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, usedAt])
+  @@map("mfa_recovery_codes")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, usedAt])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model RefreshSession {
+  id           String     @id @default(uuid()) @db.Uuid
+  familyId     String     @map("family_id") @db.Uuid
+  membershipId String     @map("membership_id") @db.Uuid
+  tokenHash    String     @unique @map("token_hash")
+  expiresAt    DateTime   @map("expires_at")
+  usedAt       DateTime?  @map("used_at")
+  revokedAt    DateTime?  @map("revoked_at")
+  ipAddress    String?    @map("ip_address")
+  userAgent    String?    @map("user_agent")
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@index([familyId])
+  @@index([membershipId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_sessions")
+}
+
+model Invitation {
+  id          String         @id @default(uuid()) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
+  email       String
+  role        MembershipRole
+  tokenHash   String         @unique @map("token_hash")
+  expiresAt   DateTime       @map("expires_at")
+  acceptedAt  DateTime?      @map("accepted_at")
+  createdById String         @map("created_by_id") @db.Uuid
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User           @relation("InvitationCreator", fields: [createdById], references: [id])
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@index([tenantId, email, acceptedAt])
+  @@index([expiresAt])
+  @@map("invitations")
+}
+
+model Company {
+  id                     String            @id @default(uuid()) @db.Uuid
+  tenantId               String            @map("tenant_id") @db.Uuid
+  cnpj                   String            @db.Char(14)
+  legalName              String            @map("legal_name")
+  tradeName              String?           @map("trade_name")
+  registrationStatus     CompanyStatus     @default(UNKNOWN) @map("registration_status")
+  openingDate            DateTime?         @map("opening_date") @db.Date
+  primaryCnae            String?           @map("primary_cnae")
+  primaryCnaeDescription String?           @map("primary_cnae_description")
+  municipality           String?
+  state                  String?           @db.Char(2)
+  dataSource             CompanyDataSource @map("data_source")
+  registryUpdatedAt      DateTime?         @map("registry_updated_at")
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+  tenant                 Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, cnpj])
+  @@index([tenantId])
+  @@index([registrationStatus])
+  @@map("companies")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  metadata   Json?
+  occurredAt DateTime @default(now()) @map("occurred_at")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, occurredAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model TaxParameterVersion {
+  id            String    @id @default(uuid()) @db.Uuid
+  parameterType String    @map("parameter_type")
+  jurisdiction  String
+  validFrom     DateTime  @map("valid_from") @db.Date
+  validUntil    DateTime? @map("valid_until") @db.Date
+  sourceUrl     String    @map("source_url")
+  sourceHash    String    @map("source_hash")
+  payload       Json
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@unique([parameterType, jurisdiction, validFrom])
+  @@index([parameterType, jurisdiction, validFrom])
+  @@map("tax_parameter_versions")
+}
