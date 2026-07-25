@@ -21,6 +21,9 @@ const envSchema = z
       .default('false')
       .transform((value) => value === 'true'),
     MFA_ENCRYPTION_KEY: z.string().min(32),
+    CREDENTIAL_VAULT_MASTER_KEY: z.string().min(1),
+    CREDENTIAL_VAULT_KEY_VERSION: z.coerce.number().int().positive().default(1),
+    CREDENTIAL_VAULT_PREVIOUS_KEYS: z.string().default('{}'),
     MFA_ISSUER: z.string().min(2).max(80).default('API Fiscal'),
     MFA_CHALLENGE_TTL_MINUTES: z.coerce.number().int().positive().max(30).default(5),
     MFA_MAXIMUM_ATTEMPTS: z.coerce.number().int().positive().max(10).default(5),
@@ -34,6 +37,55 @@ const envSchema = z
     COMPANY_REGISTRY_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
   })
   .superRefine((env, context) => {
+    const encodedVaultKey = env.CREDENTIAL_VAULT_MASTER_KEY.trim();
+    const vaultKey = Buffer.from(encodedVaultKey, 'base64');
+    if (
+      vaultKey.length !== 32 ||
+      vaultKey.toString('base64') !== encodedVaultKey
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['CREDENTIAL_VAULT_MASTER_KEY'],
+        message: 'A chave do cofre deve conter exatamente 32 bytes codificados em Base64.',
+      });
+    }
+
+    try {
+      const previousKeys: unknown = JSON.parse(env.CREDENTIAL_VAULT_PREVIOUS_KEYS);
+      if (
+        typeof previousKeys !== 'object' ||
+        previousKeys === null ||
+        Array.isArray(previousKeys)
+      ) {
+        throw new Error();
+      }
+
+      for (const [versionText, encodedKeyValue] of Object.entries(previousKeys)) {
+        const version = Number(versionText);
+        if (
+          !Number.isSafeInteger(version) ||
+          version <= 0 ||
+          version === env.CREDENTIAL_VAULT_KEY_VERSION ||
+          typeof encodedKeyValue !== 'string'
+        ) {
+          throw new Error();
+        }
+
+        const encodedKey = encodedKeyValue.trim();
+        const key = Buffer.from(encodedKey, 'base64');
+        if (key.length !== 32 || key.toString('base64') !== encodedKey) {
+          throw new Error();
+        }
+      }
+    } catch {
+      context.addIssue({
+        code: 'custom',
+        path: ['CREDENTIAL_VAULT_PREVIOUS_KEYS'],
+        message:
+          'As chaves anteriores do cofre devem ser um objeto JSON de versões positivas para chaves Base64 de 32 bytes.',
+      });
+    }
+
     if (env.NODE_ENV === 'production' && env.EXPOSE_RECOVERY_TOKENS) {
       context.addIssue({
         code: 'custom',

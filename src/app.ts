@@ -9,6 +9,8 @@ import { companyRoutes } from './modules/control/companies/presentation/company-
 import { registerErrorHandler } from './shared/infra/http/error-handler.js';
 import { accessRoutes } from './modules/access/presentation/access-routes.js';
 import { registerAuthentication } from './shared/infra/http/authentication.js';
+import { digitalCertificateRoutes } from './modules/credentials/presentation/digital-certificate-routes.js';
+import { credentialAuthorityRoutes } from './modules/credentials/presentation/credential-authority-routes.js';
 
 interface BuildAppOptions {
   env: Env;
@@ -37,6 +39,10 @@ export async function buildApp({ env, container }: BuildAppOptions): Promise<Fas
         {
           name: 'Control - Empresas',
           description: 'Cadastro automático de empresas do plano Control (F52).',
+        },
+        {
+          name: 'Control - Credenciais',
+          description: 'Cofre de certificados digitais e credenciais do plano Control (F04).',
         },
       ],
       components: {
@@ -107,6 +113,8 @@ export async function buildApp({ env, container }: BuildAppOptions): Promise<Fas
 
   await accessRoutes(app, container.cradle, authenticate);
   await companyRoutes(app, container.cradle, authenticate);
+  await digitalCertificateRoutes(app, container.cradle, authenticate);
+  await credentialAuthorityRoutes(app, container.cradle, authenticate);
 
   app.get('/openapi.json', async () => app.swagger());
 

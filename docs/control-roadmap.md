@@ -32,11 +32,23 @@ O plano Control é grande demais para uma única entrega. A implementação ser�
 - Convites têm token de uso único armazenado como hash e validade parametrizada.
 - Papéis: proprietário, administrador, contador e consulta.
 - F52 deriva escritório e autor do contexto autenticado.
+- MFA privilegiado e recuperação segura invalidam imediatamente sessões anteriores.
+
+## Cofre F04 — primeira fatia
+
+- Upload de certificados A1 em PKCS#12 com validação de arquivo, senha e chave privada.
+- Criptografia autenticada do pacote e da senha, com chave versionada.
+- Vínculo do certificado somente a empresas do mesmo escritório, garantido também
+  por chave estrangeira composta no PostgreSQL.
+- Consulta exclusiva de metadados e revogação auditada; não existe rota de download
+  ou leitura do segredo.
+- Escrita restrita a proprietário e administrador; contador consulta metadados.
+- Keyring versionado, leitura temporária de versões anteriores e recifragem
+  idempotente em lotes com auditoria.
 
 ## Próxima entrega recomendada
 
-Implementar recuperação segura de senha e MFA para papéis privilegiados antes de
-disponibilizar a autenticação publicamente. Também substituir o armazenamento em
-memória do rate limiting por Redis quando houver mais de uma instância e definir a
-limpeza/retenção de sessões expiradas. Depois disso, iniciar a Etapa 1 com importação
-idempotente de documentos.
+Conectar o adaptador de keyring a KMS/HSM. Depois, cadastrar procurações,
+responsáveis e alertas de validade e iniciar o Radar e-CAC por uma fila assíncrona
+e idempotente. Também substituir o rate limiting em memória por Redis antes da
+escala horizontal.

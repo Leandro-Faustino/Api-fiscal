@@ -13,6 +13,15 @@ describe('permissões por papel', () => {
     expect(hasPermission('VIEWER', 'companies:write')).toBe(false);
     expect(hasPermission('VIEWER', 'members:read')).toBe(false);
     expect(hasPermission('VIEWER', 'members:invite')).toBe(false);
+    expect(hasPermission('VIEWER', 'credentials:read')).toBe(false);
+    expect(hasPermission('VIEWER', 'credentials:write')).toBe(false);
+  });
+
+  it('restringe alterações no cofre aos papéis privilegiados', () => {
+    expect(hasPermission('OWNER', 'credentials:write')).toBe(true);
+    expect(hasPermission('ADMIN', 'credentials:write')).toBe(true);
+    expect(hasPermission('ACCOUNTANT', 'credentials:read')).toBe(true);
+    expect(hasPermission('ACCOUNTANT', 'credentials:write')).toBe(false);
   });
 
   it('nunca permite transferir propriedade por convite comum', () => {
