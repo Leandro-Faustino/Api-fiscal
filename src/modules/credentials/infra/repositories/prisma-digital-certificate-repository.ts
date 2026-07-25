@@ -86,7 +86,7 @@ export class PrismaDigitalCertificateRepository
           );
         }
 
-        const certificate = await transaction.digitalCertificate.create({
+        const createdCertificate = await transaction.digitalCertificate.create({
           data: {
             id: input.id,
             tenantId: input.tenantId,
@@ -101,13 +101,19 @@ export class PrismaDigitalCertificateRepository
             issuerCommonName: input.inspection.issuerCommonName,
             validFrom: input.inspection.validFrom,
             validUntil: input.inspection.validUntil,
-            companyScopes: {
-              create: input.companyIds.map((companyId) => ({
-                tenantId: input.tenantId,
-                companyId,
-              })),
-            },
           },
+        });
+
+        await transaction.certificateCompanyScope.createMany({
+          data: input.companyIds.map((companyId) => ({
+            tenantId: input.tenantId,
+            certificateId: createdCertificate.id,
+            companyId,
+          })),
+        });
+
+        const certificate = await transaction.digitalCertificate.findUniqueOrThrow({
+          where: { id: createdCertificate.id },
           include: {
             companyScopes: { select: { companyId: true } },
           },
