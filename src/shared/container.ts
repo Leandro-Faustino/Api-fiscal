@@ -63,6 +63,17 @@ import {
   ScanCredentialExpirationAlertsUseCase,
 } from '../modules/credentials/application/use-cases/manage-credential-alerts.js';
 import { PrismaCredentialAuthorityRepository } from '../modules/credentials/infra/repositories/prisma-credential-authority-repository.js';
+import type { EcacGateway } from '../modules/ecac/application/ports/ecac-gateway.js';
+import type { EcacRadarRepository } from '../modules/ecac/application/ports/ecac-radar-repository.js';
+import { ProcessEcacJobsUseCase } from '../modules/ecac/application/use-cases/process-ecac-jobs.js';
+import {
+  GetEcacSyncBatchUseCase,
+  ListEcacFindingsUseCase,
+  ListEcacSyncBatchesUseCase,
+} from '../modules/ecac/application/use-cases/read-ecac-radar.js';
+import { RequestEcacSyncUseCase } from '../modules/ecac/application/use-cases/request-ecac-sync.js';
+import { UnconfiguredEcacGateway } from '../modules/ecac/infra/gateways/unconfigured-ecac-gateway.js';
+import { PrismaEcacRadarRepository } from '../modules/ecac/infra/repositories/prisma-ecac-radar-repository.js';
 
 export interface Cradle {
   prismaClient: PrismaClient;
@@ -121,6 +132,13 @@ export interface Cradle {
   scanCredentialExpirationAlertsUseCase: ScanCredentialExpirationAlertsUseCase;
   listCredentialAlertsUseCase: ListCredentialAlertsUseCase;
   acknowledgeCredentialAlertUseCase: AcknowledgeCredentialAlertUseCase;
+  ecacGateway: EcacGateway;
+  ecacRadarRepository: EcacRadarRepository;
+  requestEcacSyncUseCase: RequestEcacSyncUseCase;
+  getEcacSyncBatchUseCase: GetEcacSyncBatchUseCase;
+  listEcacSyncBatchesUseCase: ListEcacSyncBatchesUseCase;
+  processEcacJobsUseCase: ProcessEcacJobsUseCase;
+  listEcacFindingsUseCase: ListEcacFindingsUseCase;
 }
 
 export function createApplicationContainer(env: Env, prismaClient: PrismaClient): AwilixContainer<Cradle> {
@@ -198,6 +216,13 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     acknowledgeCredentialAlertUseCase: asClass(
       AcknowledgeCredentialAlertUseCase,
     ).singleton(),
+    ecacGateway: asClass(UnconfiguredEcacGateway).singleton(),
+    ecacRadarRepository: asClass(PrismaEcacRadarRepository).singleton(),
+    requestEcacSyncUseCase: asClass(RequestEcacSyncUseCase).singleton(),
+    getEcacSyncBatchUseCase: asClass(GetEcacSyncBatchUseCase).singleton(),
+    listEcacSyncBatchesUseCase: asClass(ListEcacSyncBatchesUseCase).singleton(),
+    processEcacJobsUseCase: asClass(ProcessEcacJobsUseCase).singleton(),
+    listEcacFindingsUseCase: asClass(ListEcacFindingsUseCase).singleton(),
   });
 
   return container;

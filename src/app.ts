@@ -11,6 +11,7 @@ import { accessRoutes } from './modules/access/presentation/access-routes.js';
 import { registerAuthentication } from './shared/infra/http/authentication.js';
 import { digitalCertificateRoutes } from './modules/credentials/presentation/digital-certificate-routes.js';
 import { credentialAuthorityRoutes } from './modules/credentials/presentation/credential-authority-routes.js';
+import { ecacRadarRoutes } from './modules/ecac/presentation/ecac-radar-routes.js';
 
 interface BuildAppOptions {
   env: Env;
@@ -43,6 +44,10 @@ export async function buildApp({ env, container }: BuildAppOptions): Promise<Fas
         {
           name: 'Control - Credenciais',
           description: 'Cofre de certificados digitais e credenciais do plano Control (F04).',
+        },
+        {
+          name: 'Control - Radar e-CAC',
+          description: 'Consultas multi-CNPJ assíncronas e idempotentes do plano Control (F03).',
         },
       ],
       components: {
@@ -115,6 +120,7 @@ export async function buildApp({ env, container }: BuildAppOptions): Promise<Fas
   await companyRoutes(app, container.cradle, authenticate);
   await digitalCertificateRoutes(app, container.cradle, authenticate);
   await credentialAuthorityRoutes(app, container.cradle, authenticate);
+  await ecacRadarRoutes(app, container.cradle, authenticate);
 
   app.get('/openapi.json', async () => app.swagger());
 

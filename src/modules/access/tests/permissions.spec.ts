@@ -24,6 +24,15 @@ describe('permissões por papel', () => {
     expect(hasPermission('ACCOUNTANT', 'credentials:write')).toBe(false);
   });
 
+  it('permite solicitar e-CAC ao contador e processar somente com papel privilegiado', () => {
+    expect(hasPermission('OWNER', 'ecac:execute')).toBe(true);
+    expect(hasPermission('ADMIN', 'ecac:execute')).toBe(true);
+    expect(hasPermission('ACCOUNTANT', 'ecac:write')).toBe(true);
+    expect(hasPermission('ACCOUNTANT', 'ecac:execute')).toBe(false);
+    expect(hasPermission('VIEWER', 'ecac:read')).toBe(true);
+    expect(hasPermission('VIEWER', 'ecac:write')).toBe(false);
+  });
+
   it('nunca permite transferir propriedade por convite comum', () => {
     expect(canInviteRole('OWNER', 'OWNER')).toBe(false);
   });
