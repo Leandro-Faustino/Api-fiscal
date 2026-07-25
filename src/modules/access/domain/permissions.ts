@@ -5,6 +5,9 @@ export type Permission =
   | 'companies:write'
   | 'credentials:read'
   | 'credentials:write'
+  | 'ecac:read'
+  | 'ecac:write'
+  | 'ecac:execute'
   | 'members:read'
   | 'members:invite';
 
@@ -14,6 +17,9 @@ const rolePermissions: Record<MembershipRole, ReadonlySet<Permission>> = {
     'companies:write',
     'credentials:read',
     'credentials:write',
+    'ecac:read',
+    'ecac:write',
+    'ecac:execute',
     'members:read',
     'members:invite',
   ]),
@@ -22,11 +28,20 @@ const rolePermissions: Record<MembershipRole, ReadonlySet<Permission>> = {
     'companies:write',
     'credentials:read',
     'credentials:write',
+    'ecac:read',
+    'ecac:write',
+    'ecac:execute',
     'members:read',
     'members:invite',
   ]),
-  ACCOUNTANT: new Set(['companies:read', 'companies:write', 'credentials:read']),
-  VIEWER: new Set(['companies:read']),
+  ACCOUNTANT: new Set([
+    'companies:read',
+    'companies:write',
+    'credentials:read',
+    'ecac:read',
+    'ecac:write',
+  ]),
+  VIEWER: new Set(['companies:read', 'ecac:read']),
 };
 
 export function hasPermission(role: MembershipRole, permission: Permission): boolean {

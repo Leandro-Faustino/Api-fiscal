@@ -28,6 +28,9 @@ API em Node.js/TypeScript para a plataforma de gestão fiscal e inteligência co
 - keyring versionado com leitura de chaves anteriores e recifragem auditada em lotes
 - escopo do certificado limitado aos CNPJs autorizados
 - metadados de validade, revogação e trilha de auditoria sem exposição do segredo
+- lotes multi-CNPJ idempotentes para o Radar e-CAC
+- fila resiliente com tentativas, backoff e recuperação de jobs abandonados
+- achados e-CAC normalizados sem persistir a resposta fiscal bruta
 - tabela inicial de parâmetros fiscais por vigência (RNF-03)
 - testes unitários com Vitest
 
@@ -134,6 +137,12 @@ incremente `CREDENTIAL_VAULT_KEY_VERSION` e mantenha as chaves antigas em
 `POST /v1/control/credentials/certificates/rotate-key`. Remova uma chave antiga
 somente depois que nenhum certificado persistido usar sua versão.
 
+O Radar e-CAC recebe lotes em `POST /v1/control/ecac/sync-batches`. Cada alvo
+informa a empresa e a procuração correspondente; a API valida também o
+certificado e seu escopo antes de enfileirar. O adaptador real do Integra
+Contador ainda não está conectado. Até lá, ele pode ser substituído por injeção
+de dependência em testes e ambientes de integração.
+
 ## Qualidade
 
 ```bash
@@ -158,6 +167,8 @@ unitários, testes de integração, checagem de tipos e build.
 - O primeiro adaptador do cofre usa um keyring fornecido por variáveis de ambiente.
   Antes de armazenar certificados reais em produção, trocar esse adaptador por
   KMS/HSM com controle de acesso da infraestrutura.
+- O adaptador real Integra Contador/Serpro e o worker agendado do Radar e-CAC
+  ainda serão conectados; o corte atual entrega domínio, fila, persistência e API.
 - A BrasilAPI é o primeiro adaptador de consulta cadastral, não uma garantia de fonte oficial ou SLA de produção.
 - Nenhuma faixa, alíquota, sublimite ou prazo fiscal foi codificado.
 - Os demais itens do Control estão priorizados em [docs/control-roadmap.md](docs/control-roadmap.md).

@@ -34,7 +34,7 @@ O plano Control é grande demais para uma única entrega. A implementação ser�
 - F52 deriva escritório e autor do contexto autenticado.
 - MFA privilegiado e recuperação segura invalidam imediatamente sessões anteriores.
 
-## Cofre F04 — primeira fatia
+## Cofre F04 — concluído
 
 - Upload de certificados A1 em PKCS#12 com validação de arquivo, senha e chave privada.
 - Criptografia autenticada do pacote e da senha, com chave versionada.
@@ -45,10 +45,23 @@ O plano Control é grande demais para uma única entrega. A implementação ser�
 - Escrita restrita a proprietário e administrador; contador consulta metadados.
 - Keyring versionado, leitura temporária de versões anteriores e recifragem
   idempotente em lotes com auditoria.
+- Responsáveis contábeis, procurações, vigência, revogação lógica e alertas
+  deduplicados.
+
+## Radar e-CAC F03 — fundação
+
+- Lotes multi-CNPJ com chave idempotente e um job independente por empresa.
+- Vínculo obrigatório a procuração, certificado e escopo de CNPJ válidos.
+- Estados de fila, lock otimista, retomada de jobs abandonados, tentativas e
+  backoff exponencial.
+- Porta substituível para o Integra Contador, sem acoplar o domínio ao Serpro.
+- Protocolos, hashes e achados normalizados; o retorno bruto não é persistido.
+- Auditoria de solicitação, sucesso, falha e reprocessamento.
+- Isolamento multiempresa também por chaves estrangeiras compostas.
 
 ## Próxima entrega recomendada
 
-Conectar o adaptador de keyring a KMS/HSM. Depois, cadastrar procurações,
-responsáveis e alertas de validade e iniciar o Radar e-CAC por uma fila assíncrona
-e idempotente. Também substituir o rate limiting em memória por Redis antes da
-escala horizontal.
+Conectar o adaptador real do Integra Contador/Serpro, mover o processamento
+manual para um worker agendado e criar detecção de mudanças entre consultas.
+Em paralelo, conectar o keyring a KMS/HSM e substituir o rate limiting em
+memória por Redis antes da escala horizontal.

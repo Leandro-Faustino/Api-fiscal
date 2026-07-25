@@ -1,5 +1,6 @@
 import { asValue } from 'awilix';
 import { PrismaClient } from '@prisma/client';
+import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../src/app.js';
 import type { Env } from '../../src/config/env.js';
@@ -10,6 +11,7 @@ import type {
 import { createApplicationContainer } from '../../src/shared/container.js';
 import { generateTotpCode } from '../../src/modules/access/infra/security/totp-mfa-service.js';
 import { createTestPkcs12 } from '../../src/modules/credentials/tests/pkcs12-fixture.js';
+import type { EcacGateway } from '../../src/modules/ecac/application/ports/ecac-gateway.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -21,13 +23,16 @@ const prisma = new PrismaClient({
   datasources: { db: { url: databaseUrl } },
 });
 
+const testPassword = `Test-${randomBytes(24).toString('base64url')}-9aA`;
+const replacementTestPassword = `Next-${randomBytes(24).toString('base64url')}-9aA`;
+
 const env: Env = {
   NODE_ENV: 'test',
   HOST: '127.0.0.1',
   PORT: 3333,
   LOG_LEVEL: 'silent',
   DATABASE_URL: databaseUrl,
-  JWT_SECRET: 'integration-secret-with-at-least-32-characters',
+  JWT_SECRET: randomBytes(48).toString('base64url'),
   JWT_ISSUER: 'api-fiscal-integration',
   JWT_AUDIENCE: 'api-fiscal-integration-client',
   JWT_EXPIRES_IN: '15m',
@@ -35,8 +40,8 @@ const env: Env = {
   AUTH_RATE_LIMIT_MAX: 100,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   ENABLE_SWAGGER_UI: false,
-  MFA_ENCRYPTION_KEY: 'integration-mfa-encryption-key-32-characters',
-  CREDENTIAL_VAULT_MASTER_KEY: Buffer.alloc(32, 13).toString('base64'),
+  MFA_ENCRYPTION_KEY: randomBytes(48).toString('base64url'),
+  CREDENTIAL_VAULT_MASTER_KEY: randomBytes(32).toString('base64'),
   CREDENTIAL_VAULT_KEY_VERSION: 1,
   CREDENTIAL_VAULT_PREVIOUS_KEYS: '{}',
   MFA_ISSUER: 'API Fiscal Integration',
@@ -85,6 +90,9 @@ interface MfaSetupResponse {
 
 async function cleanDatabase(): Promise<void> {
   await prisma.auditLog.deleteMany();
+  await prisma.ecacFinding.deleteMany();
+  await prisma.ecacSyncJob.deleteMany();
+  await prisma.ecacSyncBatch.deleteMany();
   await prisma.refreshSession.deleteMany();
   await prisma.mfaChallenge.deleteMany();
   await prisma.mfaRecoveryCode.deleteMany();
@@ -101,10 +109,14 @@ async function cleanDatabase(): Promise<void> {
   await prisma.tenant.deleteMany();
 }
 
-async function createTestApp(applicationEnv: Env = env) {
+async function createTestApp(
+  applicationEnv: Env = env,
+  ecacGateway?: EcacGateway,
+) {
   const container = createApplicationContainer(applicationEnv, prisma);
   container.register({
     companyRegistryGateway: asValue(registryGateway),
+    ...(ecacGateway ? { ecacGateway: asValue(ecacGateway) } : {}),
   });
   return buildApp({ env: applicationEnv, container });
 }
@@ -121,7 +133,7 @@ async function registerOwner(
       tenantSlug: `escritorio-${suffix.toLowerCase()}`,
       userName: `Proprietário ${suffix}`,
       email: `owner-${suffix.toLowerCase()}@example.com`,
-      password: 'SenhaSegura123',
+      password: testPassword,
     },
   });
 
@@ -257,7 +269,7 @@ describe('autenticação e isolamento multiempresa', () => {
       url: '/v1/auth/password/reset',
       payload: {
         token: recoveryToken,
-        password: 'OutraSenhaSegura123',
+        password: replacementTestPassword,
       },
     });
     expect(reset.statusCode).toBe(204);
@@ -341,7 +353,7 @@ describe('autenticação e isolamento multiempresa', () => {
 
     const rotatingApp = await createTestApp({
       ...env,
-      CREDENTIAL_VAULT_MASTER_KEY: Buffer.alloc(32, 14).toString('base64'),
+      CREDENTIAL_VAULT_MASTER_KEY: randomBytes(32).toString('base64'),
       CREDENTIAL_VAULT_KEY_VERSION: 2,
       CREDENTIAL_VAULT_PREVIOUS_KEYS: JSON.stringify({
         1: env.CREDENTIAL_VAULT_MASTER_KEY,
@@ -494,6 +506,158 @@ describe('autenticação e isolamento multiempresa', () => {
       }),
     ]);
     expect(otherTenantAlerts.json()).toEqual([]);
+
+    await app.close();
+  });
+
+  it('processa Radar e-CAC de forma idempotente e mantém lotes isolados', async () => {
+    const ecacGateway: EcacGateway = {
+      query: async (input) => ({
+        provider: 'SERPRO_INTEGRA_CONTADOR',
+        protocol: `PROTOCOLO-${input.companyCnpj}`,
+        fetchedAt: new Date(),
+        payload: { situation: 'PENDING', companyCnpj: input.companyCnpj },
+        findings: [
+          {
+            code: 'PENDING_DEBT',
+            category: 'DEBT',
+            title: 'Débito pendente',
+            description: 'Pendência retornada pelo adaptador de integração.',
+            severity: 'CRITICAL',
+            sourceReference: 'DEBT-001',
+            observedAt: new Date(),
+          },
+        ],
+      }),
+    };
+    const app = await createTestApp(env, ecacGateway);
+    const tenantA = await registerOwner(app, 'RadarA');
+    const tenantB = await registerOwner(app, 'RadarB');
+
+    const companyResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/control/companies',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: { cnpj: registryData.cnpj },
+    });
+    expect(companyResponse.statusCode).toBe(201);
+    const company = companyResponse.json<{ id: string }>();
+
+    const fixture = createTestPkcs12();
+    const upload = await app.inject({
+      method: 'POST',
+      url: '/v1/control/credentials/certificates/a1',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: {
+        label: 'A1 Radar',
+        pfxBase64: fixture.base64,
+        password: fixture.password,
+        companyIds: [company.id],
+      },
+    });
+    expect(upload.statusCode).toBe(201);
+    const certificate = upload.json<{ id: string }>();
+
+    const assignment = await app.inject({
+      method: 'POST',
+      url: `/v1/control/credentials/companies/${company.id}/responsibles`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: {
+        membershipId: tenantA.session.membershipId,
+        role: 'PRIMARY',
+      },
+    });
+    expect(assignment.statusCode).toBe(201);
+    const responsible = assignment.json<{ id: string }>();
+
+    const now = Date.now();
+    const powerResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/control/credentials/powers-of-attorney',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: {
+        companyId: company.id,
+        responsibleId: responsible.id,
+        certificateId: certificate.id,
+        label: 'Procuração Radar e-CAC',
+        services: ['ECAC'],
+        validFrom: new Date(now - 24 * 60 * 60 * 1_000).toISOString().slice(0, 10),
+        validUntil: new Date(now + 30 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10),
+      },
+    });
+    expect(powerResponse.statusCode).toBe(201);
+    const power = powerResponse.json<{ id: string }>();
+
+    const payload = {
+      requestKey: 'integration-radar-001',
+      queryType: 'TAX_STATUS',
+      targets: [{ companyId: company.id, powerOfAttorneyId: power.id }],
+    };
+    const firstRequest = await app.inject({
+      method: 'POST',
+      url: '/v1/control/ecac/sync-batches',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload,
+    });
+    const repeatedRequest = await app.inject({
+      method: 'POST',
+      url: '/v1/control/ecac/sync-batches',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload,
+    });
+    expect(firstRequest.statusCode).toBe(202);
+    expect(repeatedRequest.statusCode).toBe(202);
+    const firstBatch = firstRequest.json<{ id: string; status: string }>();
+    expect(repeatedRequest.json<{ id: string }>().id).toBe(firstBatch.id);
+    expect(await prisma.ecacSyncBatch.count()).toBe(1);
+    expect(await prisma.ecacSyncJob.count()).toBe(1);
+
+    const process = await app.inject({
+      method: 'POST',
+      url: '/v1/control/ecac/jobs/process',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: { limit: 10 },
+    });
+    expect(process.statusCode).toBe(200);
+    expect(process.json()).toEqual({
+      claimed: 1,
+      succeeded: 1,
+      retryScheduled: 0,
+      failed: 0,
+    });
+
+    const completed = await app.inject({
+      method: 'GET',
+      url: `/v1/control/ecac/sync-batches/${firstBatch.id}`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({
+      status: 'SUCCEEDED',
+      succeededJobs: 1,
+      failedJobs: 0,
+      jobs: [
+        {
+          status: 'SUCCEEDED',
+          provider: 'SERPRO_INTEGRA_CONTADOR',
+          protocol: `PROTOCOLO-${registryData.cnpj}`,
+          findings: [{ code: 'PENDING_DEBT', severity: 'CRITICAL' }],
+        },
+      ],
+    });
+
+    const crossTenantRead = await app.inject({
+      method: 'GET',
+      url: `/v1/control/ecac/sync-batches/${firstBatch.id}`,
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
+    const otherTenantFindings = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/findings',
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
+    expect(crossTenantRead.statusCode).toBe(404);
+    expect(otherTenantFindings.json()).toEqual([]);
 
     await app.close();
   });
