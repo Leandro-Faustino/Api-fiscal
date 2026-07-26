@@ -61,7 +61,6 @@ O plano Control é grande demais para uma única entrega. A implementação ser�
 
 ## Próxima entrega recomendada
 
-Conectar o adaptador real do Integra Contador/Serpro, mover o processamento
-manual para um worker agendado e criar detecção de mudanças entre consultas.
-Em paralelo, conectar o keyring a KMS/HSM e substituir o rate limiting em
-memória por Redis antes da escala horizontal.
+Criar detecção de mudanças entre consultas e os alertas derivados dos achados
+do Radar. Em paralelo, conectar o keyring a KMS/HSM e substituir o rate limiting
+em memória por Redis antes da escala horizontal.

@@ -35,9 +35,27 @@ específico do Integra Contador fica em um adaptador substituível.
 | `ACCOUNTANT` | Sim | Sim | Não |
 | `VIEWER` | Sim | Não | Não |
 
-O endpoint manual de processamento existe para esta primeira fatia. Em produção,
-ele deverá ser substituído por um worker autenticado de infraestrutura, com
-agendamento, observabilidade e limites globais por provedor.
+O endpoint manual de processamento permanece como fallback administrativo. O
+processamento normal em produção é feito por um processo separado:
+
+```bash
+npm run start:ecac-worker
+```
+
+O worker reivindica jobs vencidos globalmente, sem retirar o `tenantId` das
+operações seguintes. O lote máximo, o intervalo e o TTL da posse são definidos
+por `ECAC_WORKER_BATCH_SIZE`, `ECAC_WORKER_POLL_INTERVAL_MS` e
+`ECAC_WORKER_LOCK_TTL_MS`.
+
+Cada reivindicação recebe um token aleatório. Conclusão, adiamento, falha e
+checkpoint SITFIS só são persistidos se o token ainda for o atual. Isso permite
+recuperar jobs abandonados sem aceitar a conclusão atrasada de outro processo.
+Os ciclos nunca se sobrepõem dentro da mesma instância, e `SIGINT`/`SIGTERM`
+interrompem novas consultas depois que o ciclo atual termina.
+
+Os logs do worker são JSON por linha e contêm apenas duração e contadores
+(`claimed`, `succeeded`, `deferred`, `retryScheduled`, `failed` e `leaseLost`).
+Mensagens internas de banco ou do provedor não são registradas.
 
 ## Adaptador Integra Contador
 
@@ -89,3 +107,7 @@ recifrados em lotes por `POST /v1/control/ecac/sitfis/rotate-key`.
 
 `DEBTS` permanece bloqueado até a seleção e implementação do serviço oficial
 correspondente.
+
+Para desenvolvimento local do worker, use `npm run dev:ecac-worker`. A API e o
+worker são processos independentes e compartilham somente a fila persistida no
+PostgreSQL.

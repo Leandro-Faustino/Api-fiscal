@@ -27,6 +27,7 @@ export interface CreateEcacBatchInput {
 export interface CompleteEcacJobInput {
   tenantId: string;
   jobId: string;
+  lockToken: string;
   provider: string;
   protocol: string | null;
   responseHash: string;
@@ -38,6 +39,7 @@ export interface CompleteEcacJobInput {
 export interface DeferEcacJobInput {
   tenantId: string;
   jobId: string;
+  lockToken: string;
   provider: string;
   resumeAt: Date;
   providerStatus: number;
@@ -47,6 +49,7 @@ export interface DeferEcacJobInput {
 export interface FailEcacJobInput {
   tenantId: string;
   jobId: string;
+  lockToken: string;
   errorCode: string;
   errorMessage: string;
   retriable: boolean;
@@ -67,9 +70,16 @@ export interface EcacRadarRepository {
     now: Date,
     staleBefore: Date,
   ): Promise<ClaimedEcacJob[]>;
-  completeJobWithAudit(input: CompleteEcacJobInput): Promise<void>;
-  deferJobWithAudit(input: DeferEcacJobInput): Promise<void>;
-  failJobWithAudit(input: FailEcacJobInput): Promise<'RETRY_SCHEDULED' | 'FAILED'>;
+  claimDueJobsAcrossTenants(
+    limit: number,
+    now: Date,
+    staleBefore: Date,
+  ): Promise<ClaimedEcacJob[]>;
+  completeJobWithAudit(input: CompleteEcacJobInput): Promise<boolean>;
+  deferJobWithAudit(input: DeferEcacJobInput): Promise<boolean>;
+  failJobWithAudit(
+    input: FailEcacJobInput,
+  ): Promise<'RETRY_SCHEDULED' | 'FAILED' | 'LEASE_LOST'>;
   listFindings(
     tenantId: string,
     companyId?: string,

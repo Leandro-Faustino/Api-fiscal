@@ -15,6 +15,7 @@ export interface EcacGatewayFinding {
 
 export interface QueryEcacInput {
   jobId: string;
+  lockToken: string;
   tenantId: string;
   companyId: string;
   companyCnpj: string;

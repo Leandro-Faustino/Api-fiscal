@@ -36,6 +36,9 @@ const env: Env = {
   SERPRO_API_BASE_URL:
     'https://gateway.apiserpro.serpro.gov.br/integra-contador/v1',
   SERPRO_TIMEOUT_MS: 15_000,
+  ECAC_WORKER_POLL_INTERVAL_MS: 30_000,
+  ECAC_WORKER_BATCH_SIZE: 25,
+  ECAC_WORKER_LOCK_TTL_MS: 600_000,
 };
 
 afterAll(async () => {

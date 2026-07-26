@@ -186,9 +186,10 @@ unitários, testes de integração, checagem de tipos e build.
 - O primeiro adaptador do cofre usa um keyring fornecido por variáveis de ambiente.
   Antes de armazenar certificados reais em produção, trocar esse adaptador por
   KMS/HSM com controle de acesso da infraestrutura.
-- O adaptador Integra Contador já autentica com mTLS e consulta o indicador de
-  novas mensagens da Caixa Postal. SITFIS,
-  Autentica-Procurador e o worker agendado ainda serão conectados.
+- O adaptador Integra Contador já autentica com mTLS, consulta o indicador de
+  novas mensagens da Caixa Postal e executa o fluxo persistente do SITFIS.
+  O worker agendado processa a fila global com lease por token e desligamento
+  gracioso. Autentica-Procurador ainda será conectado.
 - A BrasilAPI é o primeiro adaptador de consulta cadastral, não uma garantia de fonte oficial ou SLA de produção.
 - Nenhuma faixa, alíquota, sublimite ou prazo fiscal foi codificado.
 - Os demais itens do Control estão priorizados em [docs/control-roadmap.md](docs/control-roadmap.md).

@@ -39,6 +39,7 @@ function batch(): EcacSyncBatch {
 function claimedJob(authorizationValid = true): ClaimedEcacJob {
   return {
     id: '10000000-0000-4000-8000-000000000007',
+    lockToken: '10000000-0000-4000-8000-000000000008',
     tenantId,
     batchId: '10000000-0000-4000-8000-000000000006',
     companyId,
@@ -58,8 +59,9 @@ function repository(overrides: Partial<EcacRadarRepository> = {}): EcacRadarRepo
     getBatch: vi.fn(async () => null),
     listBatches: vi.fn(async () => []),
     claimDueJobs: vi.fn(async () => []),
-    completeJobWithAudit: vi.fn(async () => undefined),
-    deferJobWithAudit: vi.fn(async () => undefined),
+    claimDueJobsAcrossTenants: vi.fn(async () => []),
+    completeJobWithAudit: vi.fn(async () => true),
+    deferJobWithAudit: vi.fn(async () => true),
     failJobWithAudit: vi.fn(async () => 'RETRY_SCHEDULED' as const),
     listFindings: vi.fn(async () => []),
     ...overrides,
@@ -115,7 +117,7 @@ describe('Radar e-CAC', () => {
   });
 
   it('processa um job e persiste protocolo, hash e achados normalizados', async () => {
-    const completeJobWithAudit = vi.fn(async () => undefined);
+    const completeJobWithAudit = vi.fn(async () => true);
     const radarRepository = repository({
       claimDueJobs: vi.fn(async () => [claimedJob()]),
       completeJobWithAudit,
@@ -152,6 +154,7 @@ describe('Radar e-CAC', () => {
       deferred: 0,
       retryScheduled: 0,
       failed: 0,
+      leaseLost: 0,
     });
     expect(completeJobWithAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -195,7 +198,7 @@ describe('Radar e-CAC', () => {
   });
 
   it('adia o job pelo tempo informado pelo provedor sem registrar falha', async () => {
-    const deferJobWithAudit = vi.fn(async () => undefined);
+    const deferJobWithAudit = vi.fn(async () => true);
     const resumeAt = new Date('2026-07-26T03:05:04.000Z');
     const gateway: EcacGateway = {
       query: vi.fn(async () => ({
@@ -223,6 +226,7 @@ describe('Radar e-CAC', () => {
       deferred: 1,
       retryScheduled: 0,
       failed: 0,
+      leaseLost: 0,
     });
     expect(deferJobWithAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -258,5 +262,70 @@ describe('Radar e-CAC', () => {
         retriable: false,
       }),
     );
+  });
+
+  it('processa globalmente jobs de escritórios diferentes no worker', async () => {
+    const otherTenantId = '20000000-0000-4000-8000-000000000001';
+    const completeJobWithAudit = vi.fn(async () => true);
+    const claimDueJobsAcrossTenants = vi.fn(async () => [
+      { ...claimedJob(), tenantId: otherTenantId },
+    ]);
+    const gateway: EcacGateway = {
+      query: vi.fn(async () => ({
+        state: 'COMPLETED' as const,
+        provider: 'SERPRO_INTEGRA_CONTADOR',
+        protocol: null,
+        fetchedAt: new Date('2026-07-26T03:05:00.000Z'),
+        payload: { indicator: 0 },
+        findings: [],
+      })),
+    };
+    const useCase = new ProcessEcacJobsUseCase({
+      ecacRadarRepository: repository({
+        claimDueJobsAcrossTenants,
+        completeJobWithAudit,
+      }),
+      ecacGateway: gateway,
+    });
+
+    const result = await useCase.executeScheduled(50, 600_000);
+
+    expect(result.succeeded).toBe(1);
+    expect(claimDueJobsAcrossTenants).toHaveBeenCalledWith(
+      50,
+      expect.any(Date),
+      expect.any(Date),
+    );
+    expect(completeJobWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: otherTenantId }),
+    );
+  });
+
+  it('descarta uma conclusão atrasada quando a posse do lock mudou', async () => {
+    const useCase = new ProcessEcacJobsUseCase({
+      ecacRadarRepository: repository({
+        claimDueJobsAcrossTenants: vi.fn(async () => [claimedJob()]),
+        completeJobWithAudit: vi.fn(async () => false),
+      }),
+      ecacGateway: {
+        query: vi.fn(async () => ({
+          state: 'COMPLETED' as const,
+          provider: 'SERPRO_INTEGRA_CONTADOR',
+          protocol: null,
+          fetchedAt: new Date(),
+          payload: {},
+          findings: [],
+        })),
+      },
+    });
+
+    await expect(useCase.executeScheduled(25, 600_000)).resolves.toEqual({
+      claimed: 1,
+      succeeded: 0,
+      deferred: 0,
+      retryScheduled: 0,
+      failed: 0,
+      leaseLost: 1,
+    });
   });
 });

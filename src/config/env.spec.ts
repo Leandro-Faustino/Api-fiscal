@@ -67,4 +67,27 @@ describe('configuração do ambiente', () => {
       }),
     ).toThrow('A URL da API SERPRO de produção é inválida.');
   });
+
+  it('valida os limites globais e o TTL do worker e-CAC', () => {
+    const valid = loadEnv({
+      ...requiredEnvironment,
+      ECAC_WORKER_POLL_INTERVAL_MS: '5000',
+      ECAC_WORKER_BATCH_SIZE: '50',
+      ECAC_WORKER_LOCK_TTL_MS: '120000',
+      SERPRO_TIMEOUT_MS: '15000',
+    });
+    expect(valid.ECAC_WORKER_POLL_INTERVAL_MS).toBe(5000);
+    expect(valid.ECAC_WORKER_BATCH_SIZE).toBe(50);
+    expect(valid.ECAC_WORKER_LOCK_TTL_MS).toBe(120000);
+
+    expect(() =>
+      loadEnv({
+        ...requiredEnvironment,
+        ECAC_WORKER_LOCK_TTL_MS: '60000',
+        SERPRO_TIMEOUT_MS: '60000',
+      }),
+    ).toThrow(
+      'O TTL do lock do worker e-CAC deve cobrir autenticação, renovação e consultas ao SERPRO.',
+    );
+  });
 });

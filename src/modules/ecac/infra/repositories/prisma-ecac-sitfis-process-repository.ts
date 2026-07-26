@@ -41,6 +41,7 @@ export class PrismaEcacSitfisProcessRepository
           companyId: input.companyId,
           queryType: 'TAX_STATUS',
           status: 'PROCESSING',
+          lockToken: input.lockToken,
         },
         select: { id: true },
       });
@@ -114,6 +115,18 @@ export class PrismaEcacSitfisProcessRepository
         },
       });
       if (!process || process.status === 'COMPLETED') {
+        return;
+      }
+
+      const lease = await transaction.ecacSyncJob.count({
+        where: {
+          id: input.jobId,
+          tenantId: input.tenantId,
+          status: 'PROCESSING',
+          lockToken: input.lockToken,
+        },
+      });
+      if (lease !== 1) {
         return;
       }
 
