@@ -52,6 +52,9 @@ const env: Env = {
   INVITATION_TTL_HOURS: 72,
   COMPANY_REGISTRY_BASE_URL: 'https://registry.invalid',
   COMPANY_REGISTRY_TIMEOUT_MS: 1_000,
+  SERPRO_AUTH_URL: 'https://serpro-auth.invalid/authenticate',
+  SERPRO_API_BASE_URL: 'https://serpro-api.invalid/integra-contador/v1',
+  SERPRO_TIMEOUT_MS: 1_000,
 };
 
 const registryData: CompanyRegistryData = {
@@ -101,6 +104,7 @@ async function cleanDatabase(): Promise<void> {
   await prisma.credentialAlert.deleteMany();
   await prisma.powerOfAttorney.deleteMany();
   await prisma.companyResponsible.deleteMany();
+  await prisma.serproConnection.deleteMany();
   await prisma.certificateCompanyScope.deleteMany();
   await prisma.digitalCertificate.deleteMany();
   await prisma.company.deleteMany();
@@ -402,6 +406,94 @@ describe('autenticação e isolamento multiempresa', () => {
     });
 
     await rotatingApp.close();
+  });
+
+  it('cifra a conexão SERPRO e impede uso de certificado de outro escritório', async () => {
+    const app = await createTestApp();
+    const tenantA = await registerOwner(app, 'SerproA');
+    const tenantB = await registerOwner(app, 'SerproB');
+
+    const companyResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/control/companies',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: { cnpj: registryData.cnpj },
+    });
+    expect(companyResponse.statusCode).toBe(201);
+    const company = companyResponse.json<{ id: string }>();
+
+    const fixture = createTestPkcs12();
+    const upload = await app.inject({
+      method: 'POST',
+      url: '/v1/control/credentials/certificates/a1',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: {
+        label: 'A1 Contratante SERPRO',
+        pfxBase64: fixture.base64,
+        password: fixture.password,
+        companyIds: [company.id],
+      },
+    });
+    expect(upload.statusCode).toBe(201);
+    const certificate = upload.json<{ id: string }>();
+    const consumerKey = `key-${randomBytes(18).toString('base64url')}`;
+    const consumerSecret = `secret-${randomBytes(24).toString('base64url')}`;
+
+    const configured = await app.inject({
+      method: 'PUT',
+      url: '/v1/control/ecac/serpro-connection',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: {
+        certificateId: certificate.id,
+        contractorCnpj: registryData.cnpj,
+        requesterCnpj: registryData.cnpj,
+        consumerKey,
+        consumerSecret,
+      },
+    });
+    expect(configured.statusCode).toBe(200);
+    expect(configured.json()).toMatchObject({
+      tenantId: tenantA.session.tenantId,
+      certificateId: certificate.id,
+      contractorCnpj: registryData.cnpj,
+      status: 'ACTIVE',
+    });
+    expect(configured.json().consumerKey).toBeUndefined();
+    expect(configured.json().consumerSecret).toBeUndefined();
+
+    const stored = await prisma.serproConnection.findUniqueOrThrow({
+      where: { tenantId: tenantA.session.tenantId },
+    });
+    expect(stored.encryptedConsumerKey).not.toContain(consumerKey);
+    expect(stored.encryptedConsumerSecret).not.toContain(consumerSecret);
+
+    const ownRead = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/serpro-connection',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    const crossTenantRead = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/serpro-connection',
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
+    const crossTenantConfigure = await app.inject({
+      method: 'PUT',
+      url: '/v1/control/ecac/serpro-connection',
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+      payload: {
+        certificateId: certificate.id,
+        contractorCnpj: registryData.cnpj,
+        requesterCnpj: registryData.cnpj,
+        consumerKey,
+        consumerSecret,
+      },
+    });
+    expect(ownRead.statusCode).toBe(200);
+    expect(crossTenantRead.statusCode).toBe(404);
+    expect(crossTenantConfigure.statusCode).toBe(404);
+
+    await app.close();
   });
 
   it('isola responsáveis e procurações e deduplica alertas de validade', async () => {

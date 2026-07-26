@@ -110,6 +110,11 @@ enum EcacFindingSeverity {
   CRITICAL
 }
 
+enum SerproConnectionStatus {
+  ACTIVE
+  REVOKED
+}
+
 model Tenant {
   id                  String               @id @default(uuid()) @db.Uuid
   name                String
@@ -125,6 +130,7 @@ model Tenant {
   ecacSyncBatches     EcacSyncBatch[]
   ecacSyncJobs        EcacSyncJob[]
   ecacFindings        EcacFinding[]
+  serproConnection    SerproConnection?
   auditLogs           AuditLog[]
   createdAt           DateTime             @default(now()) @map("created_at")
   updatedAt           DateTime             @updatedAt @map("updated_at")
@@ -133,28 +139,29 @@ model Tenant {
 }
 
 model User {
-  id                       String               @id @default(uuid()) @db.Uuid
-  name                     String
-  email                    String               @unique
-  passwordHash             String               @map("password_hash")
-  status                   UserStatus           @default(ACTIVE)
-  securityVersion          Int                  @default(1) @map("security_version")
-  mfaEnabledAt             DateTime?            @map("mfa_enabled_at")
-  mfaSecretEncrypted       String?              @map("mfa_secret_encrypted")
-  lastLoginAt              DateTime?            @map("last_login_at")
-  memberships              Membership[]
-  createdInvitations       Invitation[]         @relation("InvitationCreator")
-  auditLogs                AuditLog[]           @relation("AuditActor")
-  mfaChallenges            MfaChallenge[]
-  mfaRecoveryCodes         MfaRecoveryCode[]
-  passwordResetTokens      PasswordResetToken[]
-  uploadedCertificates     DigitalCertificate[] @relation("CertificateUploader")
-  assignedResponsibilities CompanyResponsible[] @relation("CompanyResponsibleAssigner")
-  createdPowerOfAttorneys  PowerOfAttorney[]    @relation("PowerOfAttorneyCreator")
-  acknowledgedAlerts       CredentialAlert[]    @relation("CredentialAlertAcknowledgedBy")
-  requestedEcacBatches     EcacSyncBatch[]      @relation("EcacBatchRequester")
-  createdAt                DateTime             @default(now()) @map("created_at")
-  updatedAt                DateTime             @updatedAt @map("updated_at")
+  id                          String               @id @default(uuid()) @db.Uuid
+  name                        String
+  email                       String               @unique
+  passwordHash                String               @map("password_hash")
+  status                      UserStatus           @default(ACTIVE)
+  securityVersion             Int                  @default(1) @map("security_version")
+  mfaEnabledAt                DateTime?            @map("mfa_enabled_at")
+  mfaSecretEncrypted          String?              @map("mfa_secret_encrypted")
+  lastLoginAt                 DateTime?            @map("last_login_at")
+  memberships                 Membership[]
+  createdInvitations          Invitation[]         @relation("InvitationCreator")
+  auditLogs                   AuditLog[]           @relation("AuditActor")
+  mfaChallenges               MfaChallenge[]
+  mfaRecoveryCodes            MfaRecoveryCode[]
+  passwordResetTokens         PasswordResetToken[]
+  uploadedCertificates        DigitalCertificate[] @relation("CertificateUploader")
+  assignedResponsibilities    CompanyResponsible[] @relation("CompanyResponsibleAssigner")
+  createdPowerOfAttorneys     PowerOfAttorney[]    @relation("PowerOfAttorneyCreator")
+  acknowledgedAlerts          CredentialAlert[]    @relation("CredentialAlertAcknowledgedBy")
+  requestedEcacBatches        EcacSyncBatch[]      @relation("EcacBatchRequester")
+  configuredSerproConnections SerproConnection[]   @relation("SerproConnectionConfigurer")
+  createdAt                   DateTime             @default(now()) @map("created_at")
+  updatedAt                   DateTime             @updatedAt @map("updated_at")
 
   @@index([status])
   @@map("users")
@@ -316,6 +323,7 @@ model DigitalCertificate {
   powerOfAttorneys  PowerOfAttorney[]
   alerts            CredentialAlert[]
   ecacSyncJobs      EcacSyncJob[]
+  serproConnections SerproConnection[]
   createdAt         DateTime                  @default(now()) @map("created_at")
   updatedAt         DateTime                  @updatedAt @map("updated_at")
 
@@ -503,6 +511,30 @@ model EcacFinding {
   @@index([tenantId, companyId, severity, observedAt])
   @@index([tenantId, category, observedAt])
   @@map("ecac_findings")
+}
+
+model SerproConnection {
+  id                      String                 @id @default(uuid()) @db.Uuid
+  tenantId                String                 @unique @map("tenant_id") @db.Uuid
+  certificateId           String                 @map("certificate_id") @db.Uuid
+  contractorCnpj          String                 @map("contractor_cnpj") @db.Char(14)
+  requesterCnpj           String                 @map("requester_cnpj") @db.Char(14)
+  encryptedConsumerKey    String                 @map("encrypted_consumer_key")
+  encryptedConsumerSecret String                 @map("encrypted_consumer_secret")
+  keyVersion              Int                    @map("key_version")
+  status                  SerproConnectionStatus @default(ACTIVE)
+  configuredById          String                 @map("configured_by_id") @db.Uuid
+  revokedAt               DateTime?              @map("revoked_at")
+  tenant                  Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  certificate             DigitalCertificate     @relation(fields: [tenantId, certificateId], references: [tenantId, id], onDelete: Restrict)
+  configuredBy            User                   @relation("SerproConnectionConfigurer", fields: [configuredById], references: [id])
+  createdAt               DateTime               @default(now()) @map("created_at")
+  updatedAt               DateTime               @updatedAt @map("updated_at")
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status])
+  @@index([certificateId])
+  @@map("serpro_connections")
 }
 
 model AuditLog {

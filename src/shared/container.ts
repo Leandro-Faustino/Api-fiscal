@@ -72,8 +72,17 @@ import {
   ListEcacSyncBatchesUseCase,
 } from '../modules/ecac/application/use-cases/read-ecac-radar.js';
 import { RequestEcacSyncUseCase } from '../modules/ecac/application/use-cases/request-ecac-sync.js';
-import { UnconfiguredEcacGateway } from '../modules/ecac/infra/gateways/unconfigured-ecac-gateway.js';
 import { PrismaEcacRadarRepository } from '../modules/ecac/infra/repositories/prisma-ecac-radar-repository.js';
+import type { SerproConnectionRepository } from '../modules/ecac/application/ports/serpro-connection-repository.js';
+import type { SerproHttpTransport } from '../modules/ecac/application/ports/serpro-http-transport.js';
+import {
+  ConfigureSerproConnectionUseCase,
+  GetSerproConnectionUseCase,
+} from '../modules/ecac/application/use-cases/configure-serpro-connection.js';
+import { RotateSerproConnectionKeyUseCase } from '../modules/ecac/application/use-cases/rotate-serpro-connection-key.js';
+import { PrismaSerproConnectionRepository } from '../modules/ecac/infra/repositories/prisma-serpro-connection-repository.js';
+import { NativeSerproHttpTransport } from '../modules/ecac/infra/http/native-serpro-http-transport.js';
+import { SerproIntegraContadorGateway } from '../modules/ecac/infra/gateways/serpro-integra-contador-gateway.js';
 
 export interface Cradle {
   prismaClient: PrismaClient;
@@ -133,6 +142,14 @@ export interface Cradle {
   listCredentialAlertsUseCase: ListCredentialAlertsUseCase;
   acknowledgeCredentialAlertUseCase: AcknowledgeCredentialAlertUseCase;
   ecacGateway: EcacGateway;
+  serproConnectionRepository: SerproConnectionRepository;
+  serproHttpTransport: SerproHttpTransport;
+  serproAuthUrl: string;
+  serproApiBaseUrl: string;
+  serproTimeoutMs: number;
+  configureSerproConnectionUseCase: ConfigureSerproConnectionUseCase;
+  getSerproConnectionUseCase: GetSerproConnectionUseCase;
+  rotateSerproConnectionKeyUseCase: RotateSerproConnectionKeyUseCase;
   ecacRadarRepository: EcacRadarRepository;
   requestEcacSyncUseCase: RequestEcacSyncUseCase;
   getEcacSyncBatchUseCase: GetEcacSyncBatchUseCase;
@@ -216,7 +233,23 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     acknowledgeCredentialAlertUseCase: asClass(
       AcknowledgeCredentialAlertUseCase,
     ).singleton(),
-    ecacGateway: asClass(UnconfiguredEcacGateway).singleton(),
+    serproConnectionRepository: asClass(
+      PrismaSerproConnectionRepository,
+    ).singleton(),
+    serproHttpTransport: asClass(NativeSerproHttpTransport).singleton(),
+    serproAuthUrl: asValue(env.SERPRO_AUTH_URL),
+    serproApiBaseUrl: asValue(env.SERPRO_API_BASE_URL),
+    serproTimeoutMs: asValue(env.SERPRO_TIMEOUT_MS),
+    configureSerproConnectionUseCase: asClass(
+      ConfigureSerproConnectionUseCase,
+    ).singleton(),
+    getSerproConnectionUseCase: asClass(
+      GetSerproConnectionUseCase,
+    ).singleton(),
+    rotateSerproConnectionKeyUseCase: asClass(
+      RotateSerproConnectionKeyUseCase,
+    ).singleton(),
+    ecacGateway: asClass(SerproIntegraContadorGateway).singleton(),
     ecacRadarRepository: asClass(PrismaEcacRadarRepository).singleton(),
     requestEcacSyncUseCase: asClass(RequestEcacSyncUseCase).singleton(),
     getEcacSyncBatchUseCase: asClass(GetEcacSyncBatchUseCase).singleton(),

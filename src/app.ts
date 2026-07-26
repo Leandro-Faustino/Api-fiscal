@@ -12,6 +12,7 @@ import { registerAuthentication } from './shared/infra/http/authentication.js';
 import { digitalCertificateRoutes } from './modules/credentials/presentation/digital-certificate-routes.js';
 import { credentialAuthorityRoutes } from './modules/credentials/presentation/credential-authority-routes.js';
 import { ecacRadarRoutes } from './modules/ecac/presentation/ecac-radar-routes.js';
+import { serproConnectionRoutes } from './modules/ecac/presentation/serpro-connection-routes.js';
 
 interface BuildAppOptions {
   env: Env;
@@ -120,6 +121,7 @@ export async function buildApp({ env, container }: BuildAppOptions): Promise<Fas
   await companyRoutes(app, container.cradle, authenticate);
   await digitalCertificateRoutes(app, container.cradle, authenticate);
   await credentialAuthorityRoutes(app, container.cradle, authenticate);
+  await serproConnectionRoutes(app, container.cradle, authenticate);
   await ecacRadarRoutes(app, container.cradle, authenticate);
 
   app.get('/openapi.json', async () => app.swagger());

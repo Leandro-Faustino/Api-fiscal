@@ -31,6 +31,8 @@ API em Node.js/TypeScript para a plataforma de gestão fiscal e inteligência co
 - lotes multi-CNPJ idempotentes para o Radar e-CAC
 - fila resiliente com tentativas, backoff e recuperação de jobs abandonados
 - achados e-CAC normalizados sem persistir a resposta fiscal bruta
+- conexão Integra Contador por escritório com Consumer Key e Secret cifradas
+- autenticação OAuth2 com mTLS, cache temporário de tokens e consulta da Caixa Postal
 - tabela inicial de parâmetros fiscais por vigência (RNF-03)
 - testes unitários com Vitest
 
@@ -67,6 +69,9 @@ export ENABLE_SWAGGER_UI=true
 export REFRESH_TOKEN_TTL_DAYS=30
 export AUTH_RATE_LIMIT_MAX=10
 export AUTH_RATE_LIMIT_WINDOW_MS=60000
+export SERPRO_AUTH_URL=https://autenticacao.sapi.serpro.gov.br/authenticate
+export SERPRO_API_BASE_URL=https://gateway.apiserpro.serpro.gov.br/integra-contador/v1
+export SERPRO_TIMEOUT_MS=15000
 export EXPOSE_RECOVERY_TOKENS=true
 export SEED_OWNER_EMAIL=<email-local>
 export SEED_OWNER_PASSWORD=<senha-local-forte>
@@ -139,9 +144,17 @@ somente depois que nenhum certificado persistido usar sua versão.
 
 O Radar e-CAC recebe lotes em `POST /v1/control/ecac/sync-batches`. Cada alvo
 informa a empresa e a procuração correspondente; a API valida também o
-certificado e seu escopo antes de enfileirar. O adaptador real do Integra
-Contador ainda não está conectado. Até lá, ele pode ser substituído por injeção
-de dependência em testes e ambientes de integração.
+certificado e seu escopo antes de enfileirar. A conexão do Integra Contador é
+configurada em `PUT /v1/control/ecac/serpro-connection`. Consumer Key, Consumer
+Secret, PFX, senha, Bearer e JWT nunca são devolvidos pela API nem registrados
+nos logs. Neste primeiro corte real, `MAILBOX` consulta o indicador de novas
+mensagens da Caixa Postal. As
+consultas `TAX_STATUS` e `DEBTS` aguardam o orquestrador SITFIS com protocolo e
+polling persistente.
+
+Depois de ativar uma nova chave do cofre, recifre a Consumer Key e a Consumer
+Secret em `POST /v1/control/ecac/serpro-connection/rotate-key`. A operação é
+idempotente, auditada e protegida contra atualização concorrente.
 
 ## Qualidade
 
@@ -167,8 +180,9 @@ unitários, testes de integração, checagem de tipos e build.
 - O primeiro adaptador do cofre usa um keyring fornecido por variáveis de ambiente.
   Antes de armazenar certificados reais em produção, trocar esse adaptador por
   KMS/HSM com controle de acesso da infraestrutura.
-- O adaptador real Integra Contador/Serpro e o worker agendado do Radar e-CAC
-  ainda serão conectados; o corte atual entrega domínio, fila, persistência e API.
+- O adaptador Integra Contador já autentica com mTLS e consulta o indicador de
+  novas mensagens da Caixa Postal. SITFIS,
+  Autentica-Procurador e o worker agendado ainda serão conectados.
 - A BrasilAPI é o primeiro adaptador de consulta cadastral, não uma garantia de fonte oficial ou SLA de produção.
 - Nenhuma faixa, alíquota, sublimite ou prazo fiscal foi codificado.
 - Os demais itens do Control estão priorizados em [docs/control-roadmap.md](docs/control-roadmap.md).

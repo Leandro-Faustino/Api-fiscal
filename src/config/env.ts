@@ -35,6 +35,18 @@ const envSchema = z
     INVITATION_TTL_HOURS: z.coerce.number().int().positive().max(168).default(72),
     COMPANY_REGISTRY_BASE_URL: z.url().default('https://brasilapi.com.br/api/cnpj/v1'),
     COMPANY_REGISTRY_TIMEOUT_MS: z.coerce.number().int().positive().default(5_000),
+    SERPRO_AUTH_URL: z
+      .url()
+      .default('https://autenticacao.sapi.serpro.gov.br/authenticate'),
+    SERPRO_API_BASE_URL: z
+      .url()
+      .default('https://gateway.apiserpro.serpro.gov.br/integra-contador/v1'),
+    SERPRO_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(60_000)
+      .default(15_000),
   })
   .superRefine((env, context) => {
     const encodedVaultKey = env.CREDENTIAL_VAULT_MASTER_KEY.trim();
@@ -92,6 +104,45 @@ const envSchema = z
         path: ['EXPOSE_RECOVERY_TOKENS'],
         message: 'Tokens de recuperação não podem ser expostos em produção.',
       });
+    }
+
+    if (env.NODE_ENV === 'production') {
+      const authUrl = new URL(env.SERPRO_AUTH_URL);
+      const apiUrl = new URL(env.SERPRO_API_BASE_URL);
+      if (
+        authUrl.protocol !== 'https:' ||
+        authUrl.hostname !== 'autenticacao.sapi.serpro.gov.br' ||
+        authUrl.port !== '' ||
+        authUrl.username !== '' ||
+        authUrl.password !== '' ||
+        authUrl.pathname !== '/authenticate' ||
+        authUrl.search !== '' ||
+        authUrl.hash !== ''
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['SERPRO_AUTH_URL'],
+          message: 'A URL de autenticação SERPRO de produção é inválida.',
+        });
+      }
+      if (
+        apiUrl.protocol !== 'https:' ||
+        apiUrl.hostname !== 'gateway.apiserpro.serpro.gov.br' ||
+        apiUrl.port !== '' ||
+        apiUrl.username !== '' ||
+        apiUrl.password !== '' ||
+        !['/integra-contador/v1', '/integra-contador/v1/'].includes(
+          apiUrl.pathname,
+        ) ||
+        apiUrl.search !== '' ||
+        apiUrl.hash !== ''
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['SERPRO_API_BASE_URL'],
+          message: 'A URL da API SERPRO de produção é inválida.',
+        });
+      }
     }
   });
 
