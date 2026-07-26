@@ -115,6 +115,12 @@ enum SerproConnectionStatus {
   REVOKED
 }
 
+enum EcacSitfisStatus {
+  AWAITING_PROTOCOL
+  AWAITING_REPORT
+  COMPLETED
+}
+
 model Tenant {
   id                  String               @id @default(uuid()) @db.Uuid
   name                String
@@ -130,6 +136,7 @@ model Tenant {
   ecacSyncBatches     EcacSyncBatch[]
   ecacSyncJobs        EcacSyncJob[]
   ecacFindings        EcacFinding[]
+  ecacSitfisProcesses EcacSitfisProcess[]
   serproConnection    SerproConnection?
   auditLogs           AuditLog[]
   createdAt           DateTime             @default(now()) @map("created_at")
@@ -292,6 +299,7 @@ model Company {
   powerOfAttorneys       PowerOfAttorney[]
   ecacSyncJobs           EcacSyncJob[]
   ecacFindings           EcacFinding[]
+  ecacSitfisProcesses    EcacSitfisProcess[]
 
   @@unique([tenantId, cnpj])
   @@unique([tenantId, id])
@@ -479,6 +487,7 @@ model EcacSyncJob {
   powerOfAttorney   PowerOfAttorney    @relation(fields: [tenantId, companyId, powerOfAttorneyId], references: [tenantId, companyId, id], onDelete: Restrict)
   certificate       DigitalCertificate @relation(fields: [tenantId, certificateId], references: [tenantId, id], onDelete: Restrict)
   findings          EcacFinding[]
+  sitfisProcess     EcacSitfisProcess?
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
 
@@ -488,6 +497,32 @@ model EcacSyncJob {
   @@index([tenantId, companyId, createdAt])
   @@index([lockedAt])
   @@map("ecac_sync_jobs")
+}
+
+model EcacSitfisProcess {
+  id                 String           @id @default(uuid()) @db.Uuid
+  tenantId           String           @map("tenant_id") @db.Uuid
+  jobId              String           @unique @map("job_id") @db.Uuid
+  companyId          String           @map("company_id") @db.Uuid
+  status             EcacSitfisStatus @default(AWAITING_PROTOCOL)
+  encryptedProtocol  String?          @map("encrypted_protocol")
+  protocolKeyVersion Int?             @map("protocol_key_version")
+  protocolHash       String?          @map("protocol_hash") @db.Char(64)
+  nextAttemptAt      DateTime?        @map("next_attempt_at")
+  providerStatus     Int?             @map("provider_status")
+  reportHash         String?          @map("report_hash") @db.Char(64)
+  completedAt        DateTime?        @map("completed_at")
+  tenant             Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  job                EcacSyncJob      @relation(fields: [tenantId, jobId], references: [tenantId, id], onDelete: Cascade)
+  company            Company          @relation(fields: [tenantId, companyId], references: [tenantId, id], onDelete: Cascade)
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, jobId])
+  @@index([tenantId, status, nextAttemptAt])
+  @@index([tenantId, companyId, createdAt])
+  @@map("ecac_sitfis_processes")
 }
 
 model EcacFinding {

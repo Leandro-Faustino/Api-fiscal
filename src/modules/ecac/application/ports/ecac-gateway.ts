@@ -14,6 +14,7 @@ export interface EcacGatewayFinding {
 }
 
 export interface QueryEcacInput {
+  jobId: string;
   tenantId: string;
   companyId: string;
   companyCnpj: string;
@@ -22,13 +23,26 @@ export interface QueryEcacInput {
   queryType: EcacQueryType;
 }
 
-export interface EcacGatewayResult {
+export interface EcacGatewayCompletedResult {
+  state: 'COMPLETED';
   provider: string;
   protocol: string | null;
   fetchedAt: Date;
   payload: Record<string, unknown>;
   findings: EcacGatewayFinding[];
+  artifactHash?: string | null;
 }
+
+export interface EcacGatewayDeferredResult {
+  state: 'DEFERRED';
+  provider: string;
+  resumeAt: Date;
+  providerStatus: number;
+}
+
+export type EcacGatewayResult =
+  | EcacGatewayCompletedResult
+  | EcacGatewayDeferredResult;
 
 export interface EcacGateway {
   query(input: QueryEcacInput): Promise<EcacGatewayResult>;

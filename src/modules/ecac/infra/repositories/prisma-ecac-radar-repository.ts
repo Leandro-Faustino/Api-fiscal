@@ -11,6 +11,7 @@ import {
 import type {
   CompleteEcacJobInput,
   CreateEcacBatchInput,
+  DeferEcacJobInput,
   EcacRadarRepository,
   FailEcacJobInput,
 } from '../../application/ports/ecac-radar-repository.js';
@@ -432,6 +433,29 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
           errorMessage: null,
         },
       });
+      if (input.artifactHash) {
+        const completedProcess = await transaction.ecacSitfisProcess.updateMany({
+          where: {
+            tenantId: input.tenantId,
+            jobId: job.id,
+            status: 'AWAITING_REPORT',
+          },
+          data: {
+            status: 'COMPLETED',
+            encryptedProtocol: null,
+            protocolKeyVersion: null,
+            nextAttemptAt: null,
+            reportHash: input.artifactHash,
+            completedAt: input.completedAt,
+          },
+        });
+        if (completedProcess.count !== 1) {
+          throw new NotFoundError(
+            'Checkpoint SITFIS não encontrado.',
+            'ECAC_SITFIS_CHECKPOINT_NOT_FOUND',
+          );
+        }
+      }
       await transaction.auditLog.create({
         data: {
           tenantId: input.tenantId,
@@ -445,6 +469,56 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
             protocol: input.protocol,
             findingCount: input.findings.length,
             responseHash: input.responseHash,
+            ...(input.artifactHash
+              ? { artifactHash: input.artifactHash }
+              : {}),
+          },
+        },
+      });
+      await this.updateBatchStatus(transaction, input.tenantId, job.batchId);
+    });
+  }
+
+  public async deferJobWithAudit(input: DeferEcacJobInput): Promise<void> {
+    await this.prisma.$transaction(async (transaction) => {
+      const job = await transaction.ecacSyncJob.findFirst({
+        where: {
+          id: input.jobId,
+          tenantId: input.tenantId,
+          status: 'PROCESSING',
+        },
+      });
+      if (!job) {
+        throw new NotFoundError('Job e-CAC não encontrado.', 'ECAC_JOB_NOT_FOUND');
+      }
+
+      await transaction.ecacSyncJob.update({
+        where: { id: job.id },
+        data: {
+          status: 'RETRY_SCHEDULED',
+          provider: input.provider,
+          attemptCount: { decrement: 1 },
+          nextAttemptAt: input.resumeAt,
+          lockedAt: null,
+          completedAt: null,
+          errorCode: null,
+          errorMessage: null,
+        },
+      });
+      await transaction.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorId: null,
+          action: 'ecac.sync.provider_wait_scheduled',
+          entityType: 'ecac_sync_job',
+          entityId: job.id,
+          metadata: {
+            batchId: job.batchId,
+            companyId: job.companyId,
+            provider: input.provider,
+            providerStatus: input.providerStatus,
+            resumeAt: input.resumeAt.toISOString(),
+            deferredAt: input.deferredAt.toISOString(),
           },
         },
       });

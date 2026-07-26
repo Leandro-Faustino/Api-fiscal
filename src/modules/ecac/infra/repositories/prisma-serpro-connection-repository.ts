@@ -260,10 +260,12 @@ export class PrismaSerproConnectionRepository
       data: {
         tenantId: input.tenantId,
         actorId: null,
-        action:
-          input.operation === 'AUTHENTICATE'
-            ? 'ecac.serpro.authenticated'
-            : 'ecac.serpro.queried',
+        action: {
+          AUTHENTICATE: 'ecac.serpro.authenticated',
+          QUERY: 'ecac.serpro.queried',
+          SITFIS_REQUEST: 'ecac.serpro.sitfis_protocol_requested',
+          SITFIS_EMIT: 'ecac.serpro.sitfis_report_requested',
+        }[input.operation],
         entityType: 'serpro_connection',
         entityId: input.connectionId,
         metadata: {

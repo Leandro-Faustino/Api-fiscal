@@ -70,7 +70,22 @@ A rotação do keyring também cobre a conexão SERPRO em
 Consumer Secret são recifradas na mesma atualização condicional, e a auditoria
 registra apenas as versões anterior e nova.
 
-`TAX_STATUS` e `DEBTS` permanecem bloqueados no adaptador real até a próxima
-fatia. O SITFIS exige solicitar protocolo, respeitar o tempo de espera e emitir
-o relatório; essa máquina de estados será persistida, sem manter um processo
-HTTP aberto ou criar espera ativa no worker.
+`TAX_STATUS` usa o SITFIS `2.0` em duas chamadas. O serviço
+`SITFIS/SOLICITARPROTOCOLO91` cria o protocolo em `/Apoiar`; depois,
+`SITFIS/RELATORIOSITFIS92` recupera o relatório em `/Emitir`. Entre as chamadas:
+
+- o protocolo fica cifrado em um checkpoint vinculado ao job e ao escritório;
+- o job volta para `RETRY_SCHEDULED` sem consumir a franquia de falhas;
+- o worker respeita `tempoEspera` em milissegundos e o `ETag` dos retornos
+  `202`, `204` e `304`;
+- uma resposta `ER05` apaga o protocolo anterior e reinicia por `/Apoiar`;
+- o PDF é validado, reduzido a SHA-256 e tamanho e apagado da memória;
+- o checkpoint e o job são concluídos na mesma transação;
+- o conteúdo bruto do relatório não é salvo nem devolvido pela API.
+
+Até a implementação do cofre documental F02, o Radar registra apenas o achado
+normalizado `SITFIS_REPORT_PROCESSED`. Protocolos ainda ativos podem ser
+recifrados em lotes por `POST /v1/control/ecac/sitfis/rotate-key`.
+
+`DEBTS` permanece bloqueado até a seleção e implementação do serviço oficial
+correspondente.

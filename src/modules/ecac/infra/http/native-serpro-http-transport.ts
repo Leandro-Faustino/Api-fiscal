@@ -5,7 +5,7 @@ import type {
   SerproHttpTransport,
 } from '../../application/ports/serpro-http-transport.js';
 
-const MAX_RESPONSE_BYTES = 1024 * 1024;
+const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 export class NativeSerproHttpTransport implements SerproHttpTransport {
   public async request(input: SerproHttpRequest): Promise<SerproHttpResponse> {

@@ -12,6 +12,7 @@ interface Dependencies {
 export interface ProcessEcacJobsResult {
   claimed: number;
   succeeded: number;
+  deferred: number;
   retryScheduled: number;
   failed: number;
 }
@@ -43,6 +44,7 @@ export class ProcessEcacJobsUseCase {
     const summary: ProcessEcacJobsResult = {
       claimed: jobs.length,
       succeeded: 0,
+      deferred: 0,
       retryScheduled: 0,
       failed: 0,
     };
@@ -63,6 +65,7 @@ export class ProcessEcacJobsUseCase {
 
       try {
         const result = await this.gateway.query({
+          jobId: job.id,
           tenantId,
           companyId: job.companyId,
           companyCnpj: job.companyCnpj,
@@ -70,6 +73,18 @@ export class ProcessEcacJobsUseCase {
           certificateId: job.certificateId,
           queryType: job.queryType,
         });
+        if (result.state === 'DEFERRED') {
+          await this.repository.deferJobWithAudit({
+            tenantId,
+            jobId: job.id,
+            provider: result.provider,
+            resumeAt: result.resumeAt,
+            providerStatus: result.providerStatus,
+            deferredAt: new Date(),
+          });
+          summary.deferred += 1;
+          continue;
+        }
         const responseHash = createHash('sha256')
           .update(JSON.stringify(result.payload))
           .digest('hex');
@@ -79,6 +94,9 @@ export class ProcessEcacJobsUseCase {
           provider: result.provider,
           protocol: result.protocol,
           responseHash,
+          ...(result.artifactHash === undefined
+            ? {}
+            : { artifactHash: result.artifactHash }),
           findings: result.findings,
           completedAt: result.fetchedAt,
         });
