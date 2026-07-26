@@ -58,9 +58,12 @@ O plano Control é grande demais para uma única entrega. A implementação ser�
 - Protocolos, hashes e achados normalizados; o retorno bruto não é persistido.
 - Auditoria de solicitação, sucesso, falha e reprocessamento.
 - Isolamento multiempresa também por chaves estrangeiras compostas.
+- Detecção transacional de mudanças por empresa e tipo de consulta.
+- Alertas deduplicados com ciclo `NEW`, `CHANGED`, `RESOLVED` e `REOPENED`.
+- Reconhecimento auditado e proteção contra respostas concluídas fora de ordem.
 
 ## Próxima entrega recomendada
 
-Criar detecção de mudanças entre consultas e os alertas derivados dos achados
-do Radar. Em paralelo, conectar o keyring a KMS/HSM e substituir o rate limiting
-em memória por Redis antes da escala horizontal.
+Conectar os alertas do Radar aos canais de notificação e às preferências dos
+responsáveis contábeis. Em paralelo, conectar o keyring a KMS/HSM e substituir
+o rate limiting em memória por Redis antes da escala horizontal.

@@ -110,6 +110,19 @@ enum EcacFindingSeverity {
   CRITICAL
 }
 
+enum EcacAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum EcacAlertChangeType {
+  NEW
+  CHANGED
+  REOPENED
+  RESOLVED
+}
+
 enum SerproConnectionStatus {
   ACTIVE
   REVOKED
@@ -122,25 +135,27 @@ enum EcacSitfisStatus {
 }
 
 model Tenant {
-  id                  String               @id @default(uuid()) @db.Uuid
-  name                String
-  slug                String               @unique
-  plan                Plan                 @default(CONTROL)
-  companies           Company[]
-  memberships         Membership[]
-  invitations         Invitation[]
-  digitalCertificates DigitalCertificate[]
-  companyResponsibles CompanyResponsible[]
-  powerOfAttorneys    PowerOfAttorney[]
-  credentialAlerts    CredentialAlert[]
-  ecacSyncBatches     EcacSyncBatch[]
-  ecacSyncJobs        EcacSyncJob[]
-  ecacFindings        EcacFinding[]
-  ecacSitfisProcesses EcacSitfisProcess[]
-  serproConnection    SerproConnection?
-  auditLogs           AuditLog[]
-  createdAt           DateTime             @default(now()) @map("created_at")
-  updatedAt           DateTime             @updatedAt @map("updated_at")
+  id                     String                  @id @default(uuid()) @db.Uuid
+  name                   String
+  slug                   String                  @unique
+  plan                   Plan                    @default(CONTROL)
+  companies              Company[]
+  memberships            Membership[]
+  invitations            Invitation[]
+  digitalCertificates    DigitalCertificate[]
+  companyResponsibles    CompanyResponsible[]
+  powerOfAttorneys       PowerOfAttorney[]
+  credentialAlerts       CredentialAlert[]
+  ecacSyncBatches        EcacSyncBatch[]
+  ecacSyncJobs           EcacSyncJob[]
+  ecacFindings           EcacFinding[]
+  ecacAlerts             EcacAlert[]
+  ecacObservationCursors EcacObservationCursor[]
+  ecacSitfisProcesses    EcacSitfisProcess[]
+  serproConnection       SerproConnection?
+  auditLogs              AuditLog[]
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
 
   @@map("tenants")
 }
@@ -166,6 +181,7 @@ model User {
   createdPowerOfAttorneys     PowerOfAttorney[]    @relation("PowerOfAttorneyCreator")
   acknowledgedAlerts          CredentialAlert[]    @relation("CredentialAlertAcknowledgedBy")
   requestedEcacBatches        EcacSyncBatch[]      @relation("EcacBatchRequester")
+  acknowledgedEcacAlerts      EcacAlert[]          @relation("EcacAlertAcknowledgedBy")
   configuredSerproConnections SerproConnection[]   @relation("SerproConnectionConfigurer")
   createdAt                   DateTime             @default(now()) @map("created_at")
   updatedAt                   DateTime             @updatedAt @map("updated_at")
@@ -299,6 +315,8 @@ model Company {
   powerOfAttorneys       PowerOfAttorney[]
   ecacSyncJobs           EcacSyncJob[]
   ecacFindings           EcacFinding[]
+  ecacAlerts             EcacAlert[]
+  ecacObservationCursors EcacObservationCursor[]
   ecacSitfisProcesses    EcacSitfisProcess[]
 
   @@unique([tenantId, cnpj])
@@ -462,37 +480,41 @@ model EcacSyncBatch {
 }
 
 model EcacSyncJob {
-  id                String             @id @default(uuid()) @db.Uuid
-  tenantId          String             @map("tenant_id") @db.Uuid
-  batchId           String             @map("batch_id") @db.Uuid
-  companyId         String             @map("company_id") @db.Uuid
-  powerOfAttorneyId String             @map("power_of_attorney_id") @db.Uuid
-  certificateId     String             @map("certificate_id") @db.Uuid
-  queryType         EcacQueryType      @map("query_type")
-  status            EcacSyncJobStatus  @default(QUEUED)
-  provider          String?
-  protocol          String?
-  attemptCount      Int                @default(0) @map("attempt_count")
-  maxAttempts       Int                @default(5) @map("max_attempts")
-  nextAttemptAt     DateTime           @default(now()) @map("next_attempt_at")
-  lockedAt          DateTime?          @map("locked_at")
-  lockToken         String?            @map("lock_token") @db.Uuid
-  startedAt         DateTime?          @map("started_at")
-  completedAt       DateTime?          @map("completed_at")
-  errorCode         String?            @map("error_code")
-  errorMessage      String?            @map("error_message")
-  responseHash      String?            @map("response_hash") @db.Char(64)
-  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  batch             EcacSyncBatch      @relation(fields: [tenantId, batchId], references: [tenantId, id], onDelete: Cascade)
-  company           Company            @relation(fields: [tenantId, companyId], references: [tenantId, id], onDelete: Cascade)
-  powerOfAttorney   PowerOfAttorney    @relation(fields: [tenantId, companyId, powerOfAttorneyId], references: [tenantId, companyId, id], onDelete: Restrict)
-  certificate       DigitalCertificate @relation(fields: [tenantId, certificateId], references: [tenantId, id], onDelete: Restrict)
-  findings          EcacFinding[]
-  sitfisProcess     EcacSitfisProcess?
-  createdAt         DateTime           @default(now()) @map("created_at")
-  updatedAt         DateTime           @updatedAt @map("updated_at")
+  id                 String                  @id @default(uuid()) @db.Uuid
+  tenantId           String                  @map("tenant_id") @db.Uuid
+  batchId            String                  @map("batch_id") @db.Uuid
+  companyId          String                  @map("company_id") @db.Uuid
+  powerOfAttorneyId  String                  @map("power_of_attorney_id") @db.Uuid
+  certificateId      String                  @map("certificate_id") @db.Uuid
+  queryType          EcacQueryType           @map("query_type")
+  observationOrder   BigInt                  @default(autoincrement()) @map("observation_order")
+  status             EcacSyncJobStatus       @default(QUEUED)
+  provider           String?
+  protocol           String?
+  attemptCount       Int                     @default(0) @map("attempt_count")
+  maxAttempts        Int                     @default(5) @map("max_attempts")
+  nextAttemptAt      DateTime                @default(now()) @map("next_attempt_at")
+  lockedAt           DateTime?               @map("locked_at")
+  lockToken          String?                 @map("lock_token") @db.Uuid
+  startedAt          DateTime?               @map("started_at")
+  completedAt        DateTime?               @map("completed_at")
+  errorCode          String?                 @map("error_code")
+  errorMessage       String?                 @map("error_message")
+  responseHash       String?                 @map("response_hash") @db.Char(64)
+  tenant             Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  batch              EcacSyncBatch           @relation(fields: [tenantId, batchId], references: [tenantId, id], onDelete: Cascade)
+  company            Company                 @relation(fields: [tenantId, companyId], references: [tenantId, id], onDelete: Cascade)
+  powerOfAttorney    PowerOfAttorney         @relation(fields: [tenantId, companyId, powerOfAttorneyId], references: [tenantId, companyId, id], onDelete: Restrict)
+  certificate        DigitalCertificate      @relation(fields: [tenantId, certificateId], references: [tenantId, id], onDelete: Restrict)
+  findings           EcacFinding[]
+  latestAlerts       EcacAlert[]             @relation("EcacAlertLatestJob")
+  observationCursors EcacObservationCursor[] @relation("EcacObservationLatestJob")
+  sitfisProcess      EcacSitfisProcess?
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
 
   @@unique([batchId, companyId])
+  @@unique([observationOrder])
   @@unique([tenantId, id])
   @@index([tenantId, status, nextAttemptAt])
   @@index([status, nextAttemptAt])
@@ -548,6 +570,60 @@ model EcacFinding {
   @@index([tenantId, companyId, severity, observedAt])
   @@index([tenantId, category, observedAt])
   @@map("ecac_findings")
+}
+
+model EcacAlert {
+  id               String              @id @default(uuid()) @db.Uuid
+  tenantId         String              @map("tenant_id") @db.Uuid
+  companyId        String              @map("company_id") @db.Uuid
+  latestJobId      String              @map("latest_job_id") @db.Uuid
+  queryType        EcacQueryType       @map("query_type")
+  findingKey       String              @map("finding_key") @db.Char(64)
+  contentHash      String              @map("content_hash") @db.Char(64)
+  code             String
+  category         String
+  title            String
+  description      String?
+  severity         EcacFindingSeverity
+  status           EcacAlertStatus     @default(OPEN)
+  lastChangeType   EcacAlertChangeType @map("last_change_type")
+  firstObservedAt  DateTime            @map("first_observed_at")
+  lastObservedAt   DateTime            @map("last_observed_at")
+  acknowledgedAt   DateTime?           @map("acknowledged_at")
+  acknowledgedById String?             @map("acknowledged_by_id") @db.Uuid
+  resolvedAt       DateTime?           @map("resolved_at")
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company          Company             @relation(fields: [tenantId, companyId], references: [tenantId, id], onDelete: Cascade)
+  latestJob        EcacSyncJob         @relation("EcacAlertLatestJob", fields: [tenantId, latestJobId], references: [tenantId, id], onDelete: Restrict)
+  acknowledgedBy   User?               @relation("EcacAlertAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  @@unique([tenantId, companyId, queryType, findingKey])
+  @@unique([tenantId, id])
+  @@index([tenantId, status, severity, updatedAt])
+  @@index([tenantId, companyId, queryType, status])
+  @@index([latestJobId])
+  @@index([acknowledgedById])
+  @@map("ecac_alerts")
+}
+
+model EcacObservationCursor {
+  tenantId               String        @map("tenant_id") @db.Uuid
+  companyId              String        @map("company_id") @db.Uuid
+  queryType              EcacQueryType @map("query_type")
+  latestJobId            String        @map("latest_job_id") @db.Uuid
+  latestObservationOrder BigInt        @map("latest_observation_order")
+  lastObservedAt         DateTime      @map("last_observed_at")
+  tenant                 Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company                Company       @relation(fields: [tenantId, companyId], references: [tenantId, id], onDelete: Cascade)
+  latestJob              EcacSyncJob   @relation("EcacObservationLatestJob", fields: [tenantId, latestJobId], references: [tenantId, id], onDelete: Restrict)
+  createdAt              DateTime      @default(now()) @map("created_at")
+  updatedAt              DateTime      @updatedAt @map("updated_at")
+
+  @@id([tenantId, companyId, queryType])
+  @@index([latestJobId])
+  @@map("ecac_observation_cursors")
 }
 
 model SerproConnection {

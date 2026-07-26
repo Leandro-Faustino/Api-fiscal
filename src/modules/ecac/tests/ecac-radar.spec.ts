@@ -11,6 +11,7 @@ import type {
   ClaimedEcacJob,
   EcacSyncBatch,
 } from '../domain/ecac-radar.js';
+import { fingerprintEcacFinding } from '../domain/ecac-radar.js';
 
 const tenantId = '10000000-0000-4000-8000-000000000001';
 const actorId = '10000000-0000-4000-8000-000000000002';
@@ -64,11 +65,39 @@ function repository(overrides: Partial<EcacRadarRepository> = {}): EcacRadarRepo
     deferJobWithAudit: vi.fn(async () => true),
     failJobWithAudit: vi.fn(async () => 'RETRY_SCHEDULED' as const),
     listFindings: vi.fn(async () => []),
+    listAlerts: vi.fn(async () => []),
+    acknowledgeAlertWithAudit: vi.fn(async () => {
+      throw new Error('Alerta não configurado no teste.');
+    }),
     ...overrides,
   };
 }
 
 describe('Radar e-CAC', () => {
+  it('gera identidade estável sem confundir alteração de conteúdo com novo achado', () => {
+    const first = fingerprintEcacFinding({
+      code: ' PENDING_DEBT ',
+      category: 'debt',
+      title: 'Débito pendente',
+      description: 'Valor original',
+      severity: 'WARNING',
+      sourceReference: 'DEBT-001',
+      observedAt: new Date('2026-07-26T03:00:00.000Z'),
+    });
+    const changed = fingerprintEcacFinding({
+      code: 'pending_debt',
+      category: 'DEBT',
+      title: 'Débito pendente atualizado',
+      description: 'Novo valor',
+      severity: 'CRITICAL',
+      sourceReference: ' debt-001 ',
+      observedAt: new Date('2026-07-27T03:00:00.000Z'),
+    });
+
+    expect(changed.findingKey).toBe(first.findingKey);
+    expect(changed.contentHash).not.toBe(first.contentHash);
+  });
+
   it('cria lote idempotente com hash estável dos alvos', async () => {
     const createBatchWithAudit = vi.fn(async () => batch());
     const useCase = new RequestEcacSyncUseCase({

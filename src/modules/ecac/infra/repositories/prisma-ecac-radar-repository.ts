@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   Prisma,
+  type EcacAlert as PrismaEcacAlert,
   type EcacSyncBatchStatus as PrismaEcacSyncBatchStatus,
   type PrismaClient,
 } from '@prisma/client';
@@ -14,15 +15,18 @@ import type {
   DeferEcacJobInput,
   EcacRadarRepository,
   FailEcacJobInput,
+  ListEcacAlertsFilter,
 } from '../../application/ports/ecac-radar-repository.js';
 import type {
   ClaimedEcacJob,
+  EcacAlert,
   EcacFinding,
   EcacFindingSeverity,
   EcacQueryType,
   EcacSyncBatch,
   EcacSyncBatchStatus,
 } from '../../domain/ecac-radar.js';
+import { fingerprintEcacFinding } from '../../domain/ecac-radar.js';
 
 interface Dependencies {
   prismaClient: PrismaClient;
@@ -40,6 +44,31 @@ const batchInclude = {
 
 type BatchRow = Prisma.EcacSyncBatchGetPayload<{ include: typeof batchInclude }>;
 type FindingRow = Prisma.EcacFindingGetPayload<Record<string, never>>;
+
+function toAlert(row: PrismaEcacAlert): EcacAlert {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    companyId: row.companyId,
+    latestJobId: row.latestJobId,
+    queryType: row.queryType,
+    findingKey: row.findingKey,
+    code: row.code,
+    category: row.category,
+    title: row.title,
+    description: row.description,
+    severity: row.severity,
+    status: row.status,
+    lastChangeType: row.lastChangeType,
+    firstObservedAt: row.firstObservedAt,
+    lastObservedAt: row.lastObservedAt,
+    acknowledgedAt: row.acknowledgedAt,
+    acknowledgedById: row.acknowledgedById,
+    resolvedAt: row.resolvedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
 
 function toFinding(row: FindingRow): EcacFinding {
   return {
@@ -494,6 +523,13 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
         });
       }
 
+      const alertChanges = await this.reconcileAlerts(
+        transaction,
+        job,
+        input.findings,
+        input.completedAt,
+      );
+
       if (input.artifactHash) {
         const completedProcess = await transaction.ecacSitfisProcess.updateMany({
           where: {
@@ -530,6 +566,7 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
             protocol: input.protocol,
             findingCount: input.findings.length,
             responseHash: input.responseHash,
+            alertChanges,
             ...(input.artifactHash
               ? { artifactHash: input.artifactHash }
               : {}),
@@ -675,6 +712,256 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
       take: 500,
     });
     return rows.map(toFinding);
+  }
+
+  public async listAlerts(
+    tenantId: string,
+    filter: ListEcacAlertsFilter = {},
+  ): Promise<EcacAlert[]> {
+    const rows = await this.prisma.ecacAlert.findMany({
+      where: {
+        tenantId,
+        ...(filter.companyId ? { companyId: filter.companyId } : {}),
+        ...(filter.queryType ? { queryType: filter.queryType } : {}),
+        ...(filter.severity ? { severity: filter.severity } : {}),
+        ...(filter.status ? { status: filter.status } : {}),
+      },
+      orderBy: [
+        { status: 'asc' },
+        { severity: 'desc' },
+        { updatedAt: 'desc' },
+      ],
+      take: 500,
+    });
+    return rows.map(toAlert);
+  }
+
+  public async acknowledgeAlertWithAudit(
+    tenantId: string,
+    alertId: string,
+    actorId: string,
+    acknowledgedAt: Date,
+  ): Promise<EcacAlert> {
+    return this.prisma.$transaction(async (transaction) => {
+      const [alert, actorMembership] = await Promise.all([
+        transaction.ecacAlert.findUnique({
+          where: { tenantId_id: { tenantId, id: alertId } },
+        }),
+        transaction.membership.count({
+          where: { tenantId, userId: actorId, status: 'ACTIVE' },
+        }),
+      ]);
+      if (!alert) {
+        throw new NotFoundError('Alerta e-CAC não encontrado.', 'ECAC_ALERT_NOT_FOUND');
+      }
+      if (actorMembership !== 1) {
+        throw new NotFoundError('Vínculo ativo não encontrado.', 'MEMBERSHIP_NOT_FOUND');
+      }
+      if (alert.status === 'RESOLVED') {
+        throw new ConflictError(
+          'Um alerta resolvido não pode ser reconhecido.',
+          'ECAC_ALERT_ALREADY_RESOLVED',
+        );
+      }
+      if (alert.status === 'ACKNOWLEDGED') {
+        return toAlert(alert);
+      }
+
+      const acknowledged = await transaction.ecacAlert.update({
+        where: { tenantId_id: { tenantId, id: alertId } },
+        data: {
+          status: 'ACKNOWLEDGED',
+          acknowledgedAt,
+          acknowledgedById: actorId,
+        },
+      });
+      await transaction.auditLog.create({
+        data: {
+          tenantId,
+          actorId,
+          action: 'ecac.alert.acknowledged',
+          entityType: 'ecac_alert',
+          entityId: alertId,
+          metadata: {
+            companyId: alert.companyId,
+            queryType: alert.queryType,
+            severity: alert.severity,
+          },
+        },
+      });
+      return toAlert(acknowledged);
+    });
+  }
+
+  private async reconcileAlerts(
+    transaction: Prisma.TransactionClient,
+    job: {
+      id: string;
+      tenantId: string;
+      companyId: string;
+      queryType: EcacQueryType;
+      observationOrder: bigint;
+    },
+    findings: CompleteEcacJobInput['findings'],
+    completedAt: Date,
+  ): Promise<{
+    created: number;
+    changed: number;
+    reopened: number;
+    resolved: number;
+    unchanged: number;
+    staleObservation: boolean;
+  }> {
+    const summary = {
+      created: 0,
+      changed: 0,
+      reopened: 0,
+      resolved: 0,
+      unchanged: 0,
+      staleObservation: false,
+    };
+    const streamLock = `${job.tenantId}:${job.companyId}:${job.queryType}`;
+    await transaction.$queryRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${streamLock}, 0))
+    `;
+
+    const cursor = await transaction.ecacObservationCursor.findUnique({
+      where: {
+        tenantId_companyId_queryType: {
+          tenantId: job.tenantId,
+          companyId: job.companyId,
+          queryType: job.queryType,
+        },
+      },
+    });
+    if (cursor && cursor.latestObservationOrder >= job.observationOrder) {
+      summary.staleObservation = true;
+      return summary;
+    }
+
+    const fingerprinted = new Map(
+      findings.map((finding) => {
+        const value = fingerprintEcacFinding(finding);
+        return [value.findingKey, value] as const;
+      }),
+    );
+    const existing = await transaction.ecacAlert.findMany({
+      where: {
+        tenantId: job.tenantId,
+        companyId: job.companyId,
+        queryType: job.queryType,
+      },
+    });
+    const existingByKey = new Map(existing.map((alert) => [alert.findingKey, alert]));
+
+    for (const finding of fingerprinted.values()) {
+      const alert = existingByKey.get(finding.findingKey);
+      const commonData = {
+        latestJobId: job.id,
+        contentHash: finding.contentHash,
+        code: finding.code,
+        category: finding.category,
+        title: finding.title,
+        description: finding.description ?? null,
+        severity: finding.severity,
+        lastObservedAt: completedAt,
+      };
+      if (!alert) {
+        await transaction.ecacAlert.create({
+          data: {
+            id: randomUUID(),
+            tenantId: job.tenantId,
+            companyId: job.companyId,
+            queryType: job.queryType,
+            findingKey: finding.findingKey,
+            ...commonData,
+            status: 'OPEN',
+            lastChangeType: 'NEW',
+            firstObservedAt: completedAt,
+          },
+        });
+        summary.created += 1;
+        continue;
+      }
+
+      if (alert.status === 'RESOLVED') {
+        await transaction.ecacAlert.update({
+          where: { tenantId_id: { tenantId: job.tenantId, id: alert.id } },
+          data: {
+            ...commonData,
+            status: 'OPEN',
+            lastChangeType: 'REOPENED',
+            acknowledgedAt: null,
+            acknowledgedById: null,
+            resolvedAt: null,
+          },
+        });
+        summary.reopened += 1;
+      } else if (alert.contentHash !== finding.contentHash) {
+        await transaction.ecacAlert.update({
+          where: { tenantId_id: { tenantId: job.tenantId, id: alert.id } },
+          data: {
+            ...commonData,
+            status: 'OPEN',
+            lastChangeType: 'CHANGED',
+            acknowledgedAt: null,
+            acknowledgedById: null,
+            resolvedAt: null,
+          },
+        });
+        summary.changed += 1;
+      } else {
+        await transaction.ecacAlert.update({
+          where: { tenantId_id: { tenantId: job.tenantId, id: alert.id } },
+          data: commonData,
+        });
+        summary.unchanged += 1;
+      }
+    }
+
+    const currentKeys = [...fingerprinted.keys()];
+    const resolved = await transaction.ecacAlert.updateMany({
+      where: {
+        tenantId: job.tenantId,
+        companyId: job.companyId,
+        queryType: job.queryType,
+        status: { in: ['OPEN', 'ACKNOWLEDGED'] },
+        ...(currentKeys.length > 0
+          ? { findingKey: { notIn: currentKeys } }
+          : {}),
+      },
+      data: {
+        latestJobId: job.id,
+        status: 'RESOLVED',
+        lastChangeType: 'RESOLVED',
+        resolvedAt: completedAt,
+      },
+    });
+    summary.resolved = resolved.count;
+
+    await transaction.ecacObservationCursor.upsert({
+      where: {
+        tenantId_companyId_queryType: {
+          tenantId: job.tenantId,
+          companyId: job.companyId,
+          queryType: job.queryType,
+        },
+      },
+      create: {
+        tenantId: job.tenantId,
+        companyId: job.companyId,
+        queryType: job.queryType,
+        latestJobId: job.id,
+        latestObservationOrder: job.observationOrder,
+        lastObservedAt: completedAt,
+      },
+      update: {
+        latestJobId: job.id,
+        latestObservationOrder: job.observationOrder,
+        lastObservedAt: completedAt,
+      },
+    });
+    return summary;
   }
 
   private async updateBatchStatus(

@@ -1,5 +1,7 @@
 import type {
   ClaimedEcacJob,
+  EcacAlert,
+  EcacAlertStatus,
   EcacFinding,
   EcacQueryType,
   EcacSyncBatch,
@@ -56,6 +58,13 @@ export interface FailEcacJobInput {
   failedAt: Date;
 }
 
+export interface ListEcacAlertsFilter {
+  companyId?: string;
+  queryType?: EcacQueryType;
+  severity?: 'INFO' | 'WARNING' | 'CRITICAL';
+  status?: EcacAlertStatus;
+}
+
 export interface EcacRadarRepository {
   createBatchWithAudit(input: CreateEcacBatchInput): Promise<EcacSyncBatch>;
   getBatch(tenantId: string, batchId: string): Promise<EcacSyncBatch | null>;
@@ -85,4 +94,14 @@ export interface EcacRadarRepository {
     companyId?: string,
     severity?: 'INFO' | 'WARNING' | 'CRITICAL',
   ): Promise<EcacFinding[]>;
+  listAlerts(
+    tenantId: string,
+    filter?: ListEcacAlertsFilter,
+  ): Promise<EcacAlert[]>;
+  acknowledgeAlertWithAudit(
+    tenantId: string,
+    alertId: string,
+    actorId: string,
+    acknowledgedAt: Date,
+  ): Promise<EcacAlert>;
 }

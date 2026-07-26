@@ -67,7 +67,9 @@ import type { EcacGateway } from '../modules/ecac/application/ports/ecac-gateway
 import type { EcacRadarRepository } from '../modules/ecac/application/ports/ecac-radar-repository.js';
 import { ProcessEcacJobsUseCase } from '../modules/ecac/application/use-cases/process-ecac-jobs.js';
 import {
+  AcknowledgeEcacAlertUseCase,
   GetEcacSyncBatchUseCase,
+  ListEcacAlertsUseCase,
   ListEcacFindingsUseCase,
   ListEcacSyncBatchesUseCase,
 } from '../modules/ecac/application/use-cases/read-ecac-radar.js';
@@ -161,6 +163,8 @@ export interface Cradle {
   listEcacSyncBatchesUseCase: ListEcacSyncBatchesUseCase;
   processEcacJobsUseCase: ProcessEcacJobsUseCase;
   listEcacFindingsUseCase: ListEcacFindingsUseCase;
+  listEcacAlertsUseCase: ListEcacAlertsUseCase;
+  acknowledgeEcacAlertUseCase: AcknowledgeEcacAlertUseCase;
 }
 
 export function createApplicationContainer(env: Env, prismaClient: PrismaClient): AwilixContainer<Cradle> {
@@ -267,6 +271,10 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     listEcacSyncBatchesUseCase: asClass(ListEcacSyncBatchesUseCase).singleton(),
     processEcacJobsUseCase: asClass(ProcessEcacJobsUseCase).singleton(),
     listEcacFindingsUseCase: asClass(ListEcacFindingsUseCase).singleton(),
+    listEcacAlertsUseCase: asClass(ListEcacAlertsUseCase).singleton(),
+    acknowledgeEcacAlertUseCase: asClass(
+      AcknowledgeEcacAlertUseCase,
+    ).singleton(),
   });
 
   return container;
