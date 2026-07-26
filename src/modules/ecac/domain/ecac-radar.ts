@@ -72,6 +72,7 @@ export interface EcacSyncBatch {
 
 export interface ClaimedEcacJob {
   id: string;
+  lockToken: string;
   tenantId: string;
   batchId: string;
   companyId: string;

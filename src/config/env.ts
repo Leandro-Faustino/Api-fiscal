@@ -47,6 +47,19 @@ const envSchema = z
       .min(1_000)
       .max(60_000)
       .default(15_000),
+    ECAC_WORKER_POLL_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(300_000)
+      .default(30_000),
+    ECAC_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(25),
+    ECAC_WORKER_LOCK_TTL_MS: z.coerce
+      .number()
+      .int()
+      .min(60_000)
+      .max(3_600_000)
+      .default(600_000),
   })
   .superRefine((env, context) => {
     const encodedVaultKey = env.CREDENTIAL_VAULT_MASTER_KEY.trim();
@@ -103,6 +116,16 @@ const envSchema = z
         code: 'custom',
         path: ['EXPOSE_RECOVERY_TOKENS'],
         message: 'Tokens de recuperação não podem ser expostos em produção.',
+      });
+    }
+
+    const minimumWorkerLockTtlMs = env.SERPRO_TIMEOUT_MS * 4 + 30_000;
+    if (env.ECAC_WORKER_LOCK_TTL_MS < minimumWorkerLockTtlMs) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ECAC_WORKER_LOCK_TTL_MS'],
+        message:
+          'O TTL do lock do worker e-CAC deve cobrir autenticação, renovação e consultas ao SERPRO.',
       });
     }
 

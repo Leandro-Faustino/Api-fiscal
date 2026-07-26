@@ -26,6 +26,7 @@ const testConsumerSecret = randomBytes(36).toString('base64url');
 
 const queryInput: QueryEcacInput = {
   jobId: '10000000-0000-4000-8000-000000000006',
+  lockToken: '10000000-0000-4000-8000-000000000007',
   tenantId,
   companyId,
   companyCnpj: '11222333000181',

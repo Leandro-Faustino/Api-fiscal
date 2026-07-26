@@ -290,9 +290,26 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
     now: Date,
     staleBefore: Date,
   ): Promise<ClaimedEcacJob[]> {
+    return this.claimMatchingDueJobs(tenantId, limit, now, staleBefore);
+  }
+
+  public async claimDueJobsAcrossTenants(
+    limit: number,
+    now: Date,
+    staleBefore: Date,
+  ): Promise<ClaimedEcacJob[]> {
+    return this.claimMatchingDueJobs(undefined, limit, now, staleBefore);
+  }
+
+  private async claimMatchingDueJobs(
+    tenantId: string | undefined,
+    limit: number,
+    now: Date,
+    staleBefore: Date,
+  ): Promise<ClaimedEcacJob[]> {
     const candidates = await this.prisma.ecacSyncJob.findMany({
       where: {
-        tenantId,
+        ...(tenantId === undefined ? {} : { tenantId }),
         OR: [
           {
             status: { in: ['QUEUED', 'RETRY_SCHEDULED'] },
@@ -304,17 +321,18 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
           },
         ],
       },
-      select: { id: true },
+      select: { id: true, tenantId: true },
       orderBy: [{ nextAttemptAt: 'asc' }, { createdAt: 'asc' }],
       take: limit,
     });
 
-    const claimedIds: string[] = [];
+    const claimedJobs: Array<{ id: string; tenantId: string; lockToken: string }> = [];
     for (const candidate of candidates) {
+      const lockToken = randomUUID();
       const claimed = await this.prisma.ecacSyncJob.updateMany({
         where: {
           id: candidate.id,
-          tenantId,
+          tenantId: candidate.tenantId,
           OR: [
             {
               status: { in: ['QUEUED', 'RETRY_SCHEDULED'] },
@@ -329,6 +347,7 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
         data: {
           status: 'PROCESSING',
           lockedAt: now,
+          lockToken,
           startedAt: now,
           attemptCount: { increment: 1 },
           errorCode: null,
@@ -336,16 +355,21 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
         },
       });
       if (claimed.count === 1) {
-        claimedIds.push(candidate.id);
+        claimedJobs.push({ ...candidate, lockToken });
       }
     }
 
-    if (claimedIds.length === 0) {
+    if (claimedJobs.length === 0) {
       return [];
     }
 
     const rows = await this.prisma.ecacSyncJob.findMany({
-      where: { tenantId, id: { in: claimedIds } },
+      where: {
+        OR: claimedJobs.map((job) => ({
+          id: job.id,
+          tenantId: job.tenantId,
+        })),
+      },
       include: {
         company: { select: { cnpj: true } },
         powerOfAttorney: true,
@@ -358,47 +382,97 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
       orderBy: { createdAt: 'asc' },
     });
 
-    await this.prisma.ecacSyncBatch.updateMany({
-      where: {
-        tenantId,
-        id: { in: [...new Set(rows.map((row) => row.batchId))] },
-        status: 'QUEUED',
-      },
-      data: { status: 'RUNNING' },
-    });
+    const batchIdsByTenant = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const batchIds = batchIdsByTenant.get(row.tenantId) ?? new Set<string>();
+      batchIds.add(row.batchId);
+      batchIdsByTenant.set(row.tenantId, batchIds);
+    }
+    for (const [rowTenantId, batchIds] of batchIdsByTenant) {
+      await this.prisma.ecacSyncBatch.updateMany({
+        where: {
+          tenantId: rowTenantId,
+          id: { in: [...batchIds] },
+          status: 'QUEUED',
+        },
+        data: { status: 'RUNNING' },
+      });
+    }
 
-    return rows.map((row) => ({
-      id: row.id,
-      tenantId: row.tenantId,
-      batchId: row.batchId,
-      companyId: row.companyId,
-      companyCnpj: row.company.cnpj,
-      powerOfAttorneyId: row.powerOfAttorneyId,
-      certificateId: row.certificateId,
-      queryType: row.queryType,
-      attemptCount: row.attemptCount,
-      maxAttempts: row.maxAttempts,
-      authorizationValid:
-        row.powerOfAttorney.status === 'ACTIVE' &&
-        row.powerOfAttorney.validFrom <= now &&
-        row.powerOfAttorney.validUntil >= now &&
-        row.powerOfAttorney.companyId === row.companyId &&
-        row.powerOfAttorney.certificateId === row.certificateId &&
-        serviceAllowsQuery(row.powerOfAttorney.services, row.queryType) &&
-        row.certificate.status === 'ACTIVE' &&
-        row.certificate.validFrom <= now &&
-        row.certificate.validUntil >= now &&
-        row.certificate.companyScopes.some((scope) => scope.companyId === row.companyId),
-    }));
+    const claimedTokens = new Map(
+      claimedJobs.map((job) => [`${job.tenantId}:${job.id}`, job.lockToken]),
+    );
+    return rows.flatMap((row) => {
+      const expectedToken = claimedTokens.get(`${row.tenantId}:${row.id}`);
+      if (row.lockToken === null || row.lockToken !== expectedToken) {
+        return [];
+      }
+      return [
+        {
+          id: row.id,
+          lockToken: row.lockToken,
+          tenantId: row.tenantId,
+          batchId: row.batchId,
+          companyId: row.companyId,
+          companyCnpj: row.company.cnpj,
+          powerOfAttorneyId: row.powerOfAttorneyId,
+          certificateId: row.certificateId,
+          queryType: row.queryType,
+          attemptCount: row.attemptCount,
+          maxAttempts: row.maxAttempts,
+          authorizationValid:
+            row.powerOfAttorney.status === 'ACTIVE' &&
+            row.powerOfAttorney.validFrom <= now &&
+            row.powerOfAttorney.validUntil >= now &&
+            row.powerOfAttorney.companyId === row.companyId &&
+            row.powerOfAttorney.certificateId === row.certificateId &&
+            serviceAllowsQuery(row.powerOfAttorney.services, row.queryType) &&
+            row.certificate.status === 'ACTIVE' &&
+            row.certificate.validFrom <= now &&
+            row.certificate.validUntil >= now &&
+            row.certificate.companyScopes.some(
+              (scope) => scope.companyId === row.companyId,
+            ),
+        },
+      ];
+    });
   }
 
-  public async completeJobWithAudit(input: CompleteEcacJobInput): Promise<void> {
-    await this.prisma.$transaction(async (transaction) => {
+  public async completeJobWithAudit(input: CompleteEcacJobInput): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
       const job = await transaction.ecacSyncJob.findFirst({
-        where: { id: input.jobId, tenantId: input.tenantId, status: 'PROCESSING' },
+        where: {
+          id: input.jobId,
+          tenantId: input.tenantId,
+          status: 'PROCESSING',
+          lockToken: input.lockToken,
+        },
       });
       if (!job) {
-        throw new NotFoundError('Job e-CAC não encontrado.', 'ECAC_JOB_NOT_FOUND');
+        return false;
+      }
+
+      const completedJob = await transaction.ecacSyncJob.updateMany({
+        where: {
+          id: job.id,
+          tenantId: input.tenantId,
+          status: 'PROCESSING',
+          lockToken: input.lockToken,
+        },
+        data: {
+          status: 'SUCCEEDED',
+          provider: input.provider,
+          protocol: input.protocol,
+          responseHash: input.responseHash,
+          completedAt: input.completedAt,
+          lockedAt: null,
+          lockToken: null,
+          errorCode: null,
+          errorMessage: null,
+        },
+      });
+      if (completedJob.count !== 1) {
+        return false;
       }
 
       if (input.findings.length > 0) {
@@ -420,19 +494,6 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
         });
       }
 
-      await transaction.ecacSyncJob.update({
-        where: { id: job.id },
-        data: {
-          status: 'SUCCEEDED',
-          provider: input.provider,
-          protocol: input.protocol,
-          responseHash: input.responseHash,
-          completedAt: input.completedAt,
-          lockedAt: null,
-          errorCode: null,
-          errorMessage: null,
-        },
-      });
       if (input.artifactHash) {
         const completedProcess = await transaction.ecacSitfisProcess.updateMany({
           where: {
@@ -476,35 +537,46 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
         },
       });
       await this.updateBatchStatus(transaction, input.tenantId, job.batchId);
+      return true;
     });
   }
 
-  public async deferJobWithAudit(input: DeferEcacJobInput): Promise<void> {
-    await this.prisma.$transaction(async (transaction) => {
+  public async deferJobWithAudit(input: DeferEcacJobInput): Promise<boolean> {
+    return this.prisma.$transaction(async (transaction) => {
       const job = await transaction.ecacSyncJob.findFirst({
         where: {
           id: input.jobId,
           tenantId: input.tenantId,
           status: 'PROCESSING',
+          lockToken: input.lockToken,
         },
       });
       if (!job) {
-        throw new NotFoundError('Job e-CAC não encontrado.', 'ECAC_JOB_NOT_FOUND');
+        return false;
       }
 
-      await transaction.ecacSyncJob.update({
-        where: { id: job.id },
+      const deferredJob = await transaction.ecacSyncJob.updateMany({
+        where: {
+          id: job.id,
+          tenantId: input.tenantId,
+          status: 'PROCESSING',
+          lockToken: input.lockToken,
+        },
         data: {
           status: 'RETRY_SCHEDULED',
           provider: input.provider,
           attemptCount: { decrement: 1 },
           nextAttemptAt: input.resumeAt,
           lockedAt: null,
+          lockToken: null,
           completedAt: null,
           errorCode: null,
           errorMessage: null,
         },
       });
+      if (deferredJob.count !== 1) {
+        return false;
+      }
       await transaction.auditLog.create({
         data: {
           tenantId: input.tenantId,
@@ -523,25 +595,36 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
         },
       });
       await this.updateBatchStatus(transaction, input.tenantId, job.batchId);
+      return true;
     });
   }
 
   public async failJobWithAudit(
     input: FailEcacJobInput,
-  ): Promise<'RETRY_SCHEDULED' | 'FAILED'> {
+  ): Promise<'RETRY_SCHEDULED' | 'FAILED' | 'LEASE_LOST'> {
     return this.prisma.$transaction(async (transaction) => {
       const job = await transaction.ecacSyncJob.findFirst({
-        where: { id: input.jobId, tenantId: input.tenantId, status: 'PROCESSING' },
+        where: {
+          id: input.jobId,
+          tenantId: input.tenantId,
+          status: 'PROCESSING',
+          lockToken: input.lockToken,
+        },
       });
       if (!job) {
-        throw new NotFoundError('Job e-CAC não encontrado.', 'ECAC_JOB_NOT_FOUND');
+        return 'LEASE_LOST';
       }
 
       const retry = input.retriable && job.attemptCount < job.maxAttempts;
       const status = retry ? 'RETRY_SCHEDULED' : 'FAILED';
       const delaySeconds = Math.min(3_600, 30 * 2 ** Math.max(0, job.attemptCount - 1));
-      await transaction.ecacSyncJob.update({
-        where: { id: job.id },
+      const failedJob = await transaction.ecacSyncJob.updateMany({
+        where: {
+          id: job.id,
+          tenantId: input.tenantId,
+          status: 'PROCESSING',
+          lockToken: input.lockToken,
+        },
         data: {
           status,
           nextAttemptAt: retry
@@ -549,10 +632,14 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
             : input.failedAt,
           completedAt: retry ? null : input.failedAt,
           lockedAt: null,
+          lockToken: null,
           errorCode: input.errorCode,
           errorMessage: input.errorMessage.slice(0, 500),
         },
       });
+      if (failedJob.count !== 1) {
+        return 'LEASE_LOST';
+      }
       await transaction.auditLog.create({
         data: {
           tenantId: input.tenantId,

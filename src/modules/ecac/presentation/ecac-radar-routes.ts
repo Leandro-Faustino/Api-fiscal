@@ -290,6 +290,7 @@ export async function ecacRadarRoutes(
               'deferred',
               'retryScheduled',
               'failed',
+              'leaseLost',
             ],
             properties: {
               claimed: { type: 'integer', minimum: 0 },
@@ -297,6 +298,7 @@ export async function ecacRadarRoutes(
               deferred: { type: 'integer', minimum: 0 },
               retryScheduled: { type: 'integer', minimum: 0 },
               failed: { type: 'integer', minimum: 0 },
+              leaseLost: { type: 'integer', minimum: 0 },
             },
           },
         },

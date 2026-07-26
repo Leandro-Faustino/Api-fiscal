@@ -7,6 +7,7 @@ export interface SaveSitfisCheckpointInput {
   id: string;
   tenantId: string;
   jobId: string;
+  lockToken: string;
   companyId: string;
   status: Exclude<EcacSitfisStatus, 'COMPLETED'>;
   encryptedProtocol: string | null;
@@ -20,6 +21,7 @@ export interface SaveSitfisCheckpointInput {
 export interface ResetSitfisProtocolInput {
   tenantId: string;
   jobId: string;
+  lockToken: string;
   nextAttemptAt: Date;
   providerStatus: number;
   occurredAt: Date;

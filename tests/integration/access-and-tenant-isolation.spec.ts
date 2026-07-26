@@ -55,6 +55,9 @@ const env: Env = {
   SERPRO_AUTH_URL: 'https://serpro-auth.invalid/authenticate',
   SERPRO_API_BASE_URL: 'https://serpro-api.invalid/integra-contador/v1',
   SERPRO_TIMEOUT_MS: 1_000,
+  ECAC_WORKER_POLL_INTERVAL_MS: 30_000,
+  ECAC_WORKER_BATCH_SIZE: 25,
+  ECAC_WORKER_LOCK_TTL_MS: 600_000,
 };
 
 const registryData: CompanyRegistryData = {
@@ -749,6 +752,7 @@ describe('autenticação e isolamento multiempresa', () => {
       deferred: 1,
       retryScheduled: 0,
       failed: 0,
+      leaseLost: 0,
     });
     const deferredJob = await prisma.ecacSyncJob.findUniqueOrThrow({
       where: { id: queuedJob.id },
@@ -764,19 +768,22 @@ describe('autenticação e isolamento multiempresa', () => {
       data: { nextAttemptAt: new Date(Date.now() - 1_000) },
     });
 
-    const completedProcess = await app.inject({
-      method: 'POST',
-      url: '/v1/control/ecac/jobs/process',
-      headers: { authorization: `Bearer ${tenantA.accessToken}` },
-      payload: { limit: 10 },
+    const workerContainer = createApplicationContainer(env, prisma);
+    workerContainer.register({
+      ecacGateway: asValue(ecacGateway),
     });
-    expect(completedProcess.statusCode).toBe(200);
-    expect(completedProcess.json()).toEqual({
+    const completedProcess =
+      await workerContainer.cradle.processEcacJobsUseCase.executeScheduled(
+        env.ECAC_WORKER_BATCH_SIZE,
+        env.ECAC_WORKER_LOCK_TTL_MS,
+      );
+    expect(completedProcess).toEqual({
       claimed: 1,
       succeeded: 1,
       deferred: 0,
       retryScheduled: 0,
       failed: 0,
+      leaseLost: 0,
     });
 
     const completed = await app.inject({

@@ -476,6 +476,7 @@ model EcacSyncJob {
   maxAttempts       Int                @default(5) @map("max_attempts")
   nextAttemptAt     DateTime           @default(now()) @map("next_attempt_at")
   lockedAt          DateTime?          @map("locked_at")
+  lockToken         String?            @map("lock_token") @db.Uuid
   startedAt         DateTime?          @map("started_at")
   completedAt       DateTime?          @map("completed_at")
   errorCode         String?            @map("error_code")
@@ -494,6 +495,7 @@ model EcacSyncJob {
   @@unique([batchId, companyId])
   @@unique([tenantId, id])
   @@index([tenantId, status, nextAttemptAt])
+  @@index([status, nextAttemptAt])
   @@index([tenantId, companyId, createdAt])
   @@index([lockedAt])
   @@map("ecac_sync_jobs")
