@@ -48,4 +48,23 @@ describe('configuração do ambiente', () => {
       }),
     ).toThrow('As chaves anteriores do cofre devem ser um objeto JSON');
   });
+
+  it('restringe os endpoints SERPRO em produção', () => {
+    expect(() =>
+      loadEnv({
+        ...requiredEnvironment,
+        NODE_ENV: 'production',
+        SERPRO_AUTH_URL: 'https://example.com/authenticate',
+      }),
+    ).toThrow('A URL de autenticação SERPRO de produção é inválida.');
+
+    expect(() =>
+      loadEnv({
+        ...requiredEnvironment,
+        NODE_ENV: 'production',
+        SERPRO_API_BASE_URL:
+          'https://gateway.apiserpro.serpro.gov.br/integra-contador/v1/nao-oficial',
+      }),
+    ).toThrow('A URL da API SERPRO de produção é inválida.');
+  });
 });

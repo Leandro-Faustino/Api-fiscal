@@ -32,6 +32,10 @@ const env: Env = {
   INVITATION_TTL_HOURS: 72,
   COMPANY_REGISTRY_BASE_URL: 'https://brasilapi.com.br/api/cnpj/v1',
   COMPANY_REGISTRY_TIMEOUT_MS: 5_000,
+  SERPRO_AUTH_URL: 'https://autenticacao.sapi.serpro.gov.br/authenticate',
+  SERPRO_API_BASE_URL:
+    'https://gateway.apiserpro.serpro.gov.br/integra-contador/v1',
+  SERPRO_TIMEOUT_MS: 15_000,
 };
 
 afterAll(async () => {
