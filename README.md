@@ -33,6 +33,8 @@ API em Node.js/TypeScript para a plataforma de gestão fiscal e inteligência co
 - achados e-CAC normalizados sem persistir a resposta fiscal bruta
 - conexão Integra Contador por escritório com Consumer Key e Secret cifradas
 - autenticação OAuth2 com mTLS, cache temporário de tokens e consulta da Caixa Postal
+- SITFIS 2.0 persistente com protocolo cifrado, espera orientada pelo provedor e
+  descarte do PDF após hash seguro
 - tabela inicial de parâmetros fiscais por vigência (RNF-03)
 - testes unitários com Vitest
 
@@ -149,12 +151,16 @@ configurada em `PUT /v1/control/ecac/serpro-connection`. Consumer Key, Consumer
 Secret, PFX, senha, Bearer e JWT nunca são devolvidos pela API nem registrados
 nos logs. Neste primeiro corte real, `MAILBOX` consulta o indicador de novas
 mensagens da Caixa Postal. As
-consultas `TAX_STATUS` e `DEBTS` aguardam o orquestrador SITFIS com protocolo e
-polling persistente.
+  consultas `TAX_STATUS` usam o orquestrador SITFIS persistente; `DEBTS` ainda
+  aguarda o adaptador oficial correspondente.
 
 Depois de ativar uma nova chave do cofre, recifre a Consumer Key e a Consumer
 Secret em `POST /v1/control/ecac/serpro-connection/rotate-key`. A operação é
 idempotente, auditada e protegida contra atualização concorrente.
+
+Enquanto existirem relatórios SITFIS em processamento, recifre também seus
+protocolos com `POST /v1/control/ecac/sitfis/rotate-key` antes de remover uma
+versão anterior do keyring.
 
 ## Qualidade
 

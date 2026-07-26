@@ -59,6 +59,7 @@ function repository(overrides: Partial<EcacRadarRepository> = {}): EcacRadarRepo
     listBatches: vi.fn(async () => []),
     claimDueJobs: vi.fn(async () => []),
     completeJobWithAudit: vi.fn(async () => undefined),
+    deferJobWithAudit: vi.fn(async () => undefined),
     failJobWithAudit: vi.fn(async () => 'RETRY_SCHEDULED' as const),
     listFindings: vi.fn(async () => []),
     ...overrides,
@@ -121,6 +122,7 @@ describe('Radar e-CAC', () => {
     });
     const gateway: EcacGateway = {
       query: vi.fn(async (): Promise<EcacGatewayResult> => ({
+        state: 'COMPLETED',
         provider: 'SERPRO_INTEGRA_CONTADOR',
         protocol: 'PROTOCOLO-1',
         fetchedAt: new Date('2026-07-26T03:05:00.000Z'),
@@ -147,6 +149,7 @@ describe('Radar e-CAC', () => {
     expect(result).toEqual({
       claimed: 1,
       succeeded: 1,
+      deferred: 0,
       retryScheduled: 0,
       failed: 0,
     });
@@ -189,6 +192,47 @@ describe('Radar e-CAC', () => {
         retriable: true,
       }),
     );
+  });
+
+  it('adia o job pelo tempo informado pelo provedor sem registrar falha', async () => {
+    const deferJobWithAudit = vi.fn(async () => undefined);
+    const resumeAt = new Date('2026-07-26T03:05:04.000Z');
+    const gateway: EcacGateway = {
+      query: vi.fn(async () => ({
+        state: 'DEFERRED' as const,
+        provider: 'SERPRO_INTEGRA_CONTADOR',
+        resumeAt,
+        providerStatus: 202,
+      })),
+    };
+    const failJobWithAudit = vi.fn(async () => 'FAILED' as const);
+    const useCase = new ProcessEcacJobsUseCase({
+      ecacRadarRepository: repository({
+        claimDueJobs: vi.fn(async () => [claimedJob()]),
+        deferJobWithAudit,
+        failJobWithAudit,
+      }),
+      ecacGateway: gateway,
+    });
+
+    const result = await useCase.execute(tenantId, 1);
+
+    expect(result).toEqual({
+      claimed: 1,
+      succeeded: 0,
+      deferred: 1,
+      retryScheduled: 0,
+      failed: 0,
+    });
+    expect(deferJobWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId,
+        provider: 'SERPRO_INTEGRA_CONTADOR',
+        resumeAt,
+        providerStatus: 202,
+      }),
+    );
+    expect(failJobWithAudit).not.toHaveBeenCalled();
   });
 
   it('não chama o provedor quando a autorização foi revogada após o enfileiramento', async () => {

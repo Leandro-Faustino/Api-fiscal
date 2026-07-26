@@ -94,6 +94,7 @@ interface MfaSetupResponse {
 async function cleanDatabase(): Promise<void> {
   await prisma.auditLog.deleteMany();
   await prisma.ecacFinding.deleteMany();
+  await prisma.ecacSitfisProcess.deleteMany();
   await prisma.ecacSyncJob.deleteMany();
   await prisma.ecacSyncBatch.deleteMany();
   await prisma.refreshSession.deleteMany();
@@ -603,24 +604,39 @@ describe('autenticação e isolamento multiempresa', () => {
   });
 
   it('processa Radar e-CAC de forma idempotente e mantém lotes isolados', async () => {
+    const sitfisReportHash = 'd'.repeat(64);
+    let gatewayCalls = 0;
     const ecacGateway: EcacGateway = {
-      query: async (input) => ({
-        provider: 'SERPRO_INTEGRA_CONTADOR',
-        protocol: `PROTOCOLO-${input.companyCnpj}`,
-        fetchedAt: new Date(),
-        payload: { situation: 'PENDING', companyCnpj: input.companyCnpj },
-        findings: [
-          {
-            code: 'PENDING_DEBT',
-            category: 'DEBT',
-            title: 'Débito pendente',
-            description: 'Pendência retornada pelo adaptador de integração.',
-            severity: 'CRITICAL',
-            sourceReference: 'DEBT-001',
-            observedAt: new Date(),
-          },
-        ],
-      }),
+      query: async (input) => {
+        gatewayCalls += 1;
+        if (gatewayCalls === 1) {
+          return {
+            state: 'DEFERRED',
+            provider: 'SERPRO_INTEGRA_CONTADOR',
+            resumeAt: new Date(Date.now() + 60_000),
+            providerStatus: 202,
+          };
+        }
+        return {
+          state: 'COMPLETED',
+          provider: 'SERPRO_INTEGRA_CONTADOR',
+          protocol: `PROTOCOLO-${input.companyCnpj}`,
+          fetchedAt: new Date(),
+          payload: { situation: 'PENDING', companyCnpj: input.companyCnpj },
+          artifactHash: sitfisReportHash,
+          findings: [
+            {
+              code: 'PENDING_DEBT',
+              category: 'DEBT',
+              title: 'Débito pendente',
+              description: 'Pendência retornada pelo adaptador de integração.',
+              severity: 'CRITICAL',
+              sourceReference: 'DEBT-001',
+              observedAt: new Date(),
+            },
+          ],
+        };
+      },
     };
     const app = await createTestApp(env, ecacGateway);
     const tenantA = await registerOwner(app, 'RadarA');
@@ -703,17 +719,62 @@ describe('autenticação e isolamento multiempresa', () => {
     expect(repeatedRequest.json<{ id: string }>().id).toBe(firstBatch.id);
     expect(await prisma.ecacSyncBatch.count()).toBe(1);
     expect(await prisma.ecacSyncJob.count()).toBe(1);
+    const queuedJob = await prisma.ecacSyncJob.findFirstOrThrow({
+      where: { batchId: firstBatch.id },
+    });
+    await prisma.ecacSitfisProcess.create({
+      data: {
+        tenantId: tenantA.session.tenantId,
+        jobId: queuedJob.id,
+        companyId: company.id,
+        status: 'AWAITING_REPORT',
+        encryptedProtocol: 'test-only-encrypted-protocol',
+        protocolKeyVersion: 1,
+        protocolHash: 'c'.repeat(64),
+        nextAttemptAt: new Date(),
+        providerStatus: 202,
+      },
+    });
 
-    const process = await app.inject({
+    const deferredProcess = await app.inject({
       method: 'POST',
       url: '/v1/control/ecac/jobs/process',
       headers: { authorization: `Bearer ${tenantA.accessToken}` },
       payload: { limit: 10 },
     });
-    expect(process.statusCode).toBe(200);
-    expect(process.json()).toEqual({
+    expect(deferredProcess.statusCode).toBe(200);
+    expect(deferredProcess.json()).toEqual({
+      claimed: 1,
+      succeeded: 0,
+      deferred: 1,
+      retryScheduled: 0,
+      failed: 0,
+    });
+    const deferredJob = await prisma.ecacSyncJob.findUniqueOrThrow({
+      where: { id: queuedJob.id },
+    });
+    expect(deferredJob).toMatchObject({
+      status: 'RETRY_SCHEDULED',
+      attemptCount: 0,
+      provider: 'SERPRO_INTEGRA_CONTADOR',
+      errorCode: null,
+    });
+    await prisma.ecacSyncJob.update({
+      where: { id: queuedJob.id },
+      data: { nextAttemptAt: new Date(Date.now() - 1_000) },
+    });
+
+    const completedProcess = await app.inject({
+      method: 'POST',
+      url: '/v1/control/ecac/jobs/process',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: { limit: 10 },
+    });
+    expect(completedProcess.statusCode).toBe(200);
+    expect(completedProcess.json()).toEqual({
       claimed: 1,
       succeeded: 1,
+      deferred: 0,
       retryScheduled: 0,
       failed: 0,
     });
@@ -736,6 +797,17 @@ describe('autenticação e isolamento multiempresa', () => {
           findings: [{ code: 'PENDING_DEBT', severity: 'CRITICAL' }],
         },
       ],
+    });
+    const completedSitfis = await prisma.ecacSitfisProcess.findUniqueOrThrow({
+      where: { jobId: queuedJob.id },
+    });
+    expect(completedSitfis).toMatchObject({
+      status: 'COMPLETED',
+      encryptedProtocol: null,
+      protocolKeyVersion: null,
+      protocolHash: 'c'.repeat(64),
+      reportHash: sitfisReportHash,
+      completedAt: expect.any(Date),
     });
 
     const crossTenantRead = await app.inject({

@@ -52,7 +52,7 @@ export interface RecordSerproUseInput {
   connectionId: string;
   companyId: string;
   queryType: EcacQueryType;
-  operation: 'AUTHENTICATE' | 'QUERY';
+  operation: 'AUTHENTICATE' | 'QUERY' | 'SITFIS_REQUEST' | 'SITFIS_EMIT';
   outcome: 'SUCCEEDED' | 'FAILED';
   providerStatus?: number;
   occurredAt: Date;

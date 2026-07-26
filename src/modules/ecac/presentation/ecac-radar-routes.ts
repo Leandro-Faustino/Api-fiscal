@@ -284,10 +284,17 @@ export async function ecacRadarRoutes(
           200: {
             type: 'object',
             additionalProperties: false,
-            required: ['claimed', 'succeeded', 'retryScheduled', 'failed'],
+            required: [
+              'claimed',
+              'succeeded',
+              'deferred',
+              'retryScheduled',
+              'failed',
+            ],
             properties: {
               claimed: { type: 'integer', minimum: 0 },
               succeeded: { type: 'integer', minimum: 0 },
+              deferred: { type: 'integer', minimum: 0 },
               retryScheduled: { type: 'integer', minimum: 0 },
               failed: { type: 'integer', minimum: 0 },
             },

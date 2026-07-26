@@ -30,8 +30,18 @@ export interface CompleteEcacJobInput {
   provider: string;
   protocol: string | null;
   responseHash: string;
+  artifactHash?: string | null;
   findings: EcacGatewayFinding[];
   completedAt: Date;
+}
+
+export interface DeferEcacJobInput {
+  tenantId: string;
+  jobId: string;
+  provider: string;
+  resumeAt: Date;
+  providerStatus: number;
+  deferredAt: Date;
 }
 
 export interface FailEcacJobInput {
@@ -58,6 +68,7 @@ export interface EcacRadarRepository {
     staleBefore: Date,
   ): Promise<ClaimedEcacJob[]>;
   completeJobWithAudit(input: CompleteEcacJobInput): Promise<void>;
+  deferJobWithAudit(input: DeferEcacJobInput): Promise<void>;
   failJobWithAudit(input: FailEcacJobInput): Promise<'RETRY_SCHEDULED' | 'FAILED'>;
   listFindings(
     tenantId: string,

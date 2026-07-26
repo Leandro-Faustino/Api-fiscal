@@ -50,6 +50,10 @@ interface ConfigureSerproConnectionBody {
   consumerSecret: string;
 }
 
+interface RotateSitfisProtocolKeysBody {
+  limit?: number;
+}
+
 export async function serproConnectionRoutes(
   app: FastifyInstance,
   cradle: Cradle,
@@ -127,6 +131,53 @@ export async function serproConnectionRoutes(
       return cradle.rotateSerproConnectionKeyUseCase.execute({
         tenantId: context.tenantId,
         actorId: context.userId,
+      });
+    },
+  );
+
+  app.post<{ Body: RotateSitfisProtocolKeysBody }>(
+    '/v1/control/ecac/sitfis/rotate-key',
+    {
+      preHandler: [authenticate, authorize('credentials:write')],
+      schema: {
+        security: [{ bearerAuth: [] }],
+        tags: ['Control - Radar e-CAC'],
+        summary: 'Recifrar protocolos SITFIS ativos com a chave do cofre',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            additionalProperties: false,
+            required: [
+              'targetKeyVersion',
+              'scanned',
+              'rotated',
+              'skippedByConcurrency',
+              'hasMore',
+            ],
+            properties: {
+              targetKeyVersion: { type: 'integer', minimum: 1 },
+              scanned: { type: 'integer', minimum: 0 },
+              rotated: { type: 'integer', minimum: 0 },
+              skippedByConcurrency: { type: 'integer', minimum: 0 },
+              hasMore: { type: 'boolean' },
+            },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const context = request.authContext!;
+      return cradle.rotateSitfisProtocolKeysUseCase.execute({
+        tenantId: context.tenantId,
+        actorId: context.userId,
+        limit: request.body?.limit ?? 50,
       });
     },
   );

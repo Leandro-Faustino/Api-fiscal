@@ -83,6 +83,9 @@ import { RotateSerproConnectionKeyUseCase } from '../modules/ecac/application/us
 import { PrismaSerproConnectionRepository } from '../modules/ecac/infra/repositories/prisma-serpro-connection-repository.js';
 import { NativeSerproHttpTransport } from '../modules/ecac/infra/http/native-serpro-http-transport.js';
 import { SerproIntegraContadorGateway } from '../modules/ecac/infra/gateways/serpro-integra-contador-gateway.js';
+import type { EcacSitfisProcessRepository } from '../modules/ecac/application/ports/ecac-sitfis-process-repository.js';
+import { PrismaEcacSitfisProcessRepository } from '../modules/ecac/infra/repositories/prisma-ecac-sitfis-process-repository.js';
+import { RotateSitfisProtocolKeysUseCase } from '../modules/ecac/application/use-cases/rotate-sitfis-protocol-keys.js';
 
 export interface Cradle {
   prismaClient: PrismaClient;
@@ -142,6 +145,8 @@ export interface Cradle {
   listCredentialAlertsUseCase: ListCredentialAlertsUseCase;
   acknowledgeCredentialAlertUseCase: AcknowledgeCredentialAlertUseCase;
   ecacGateway: EcacGateway;
+  ecacSitfisProcessRepository: EcacSitfisProcessRepository;
+  rotateSitfisProtocolKeysUseCase: RotateSitfisProtocolKeysUseCase;
   serproConnectionRepository: SerproConnectionRepository;
   serproHttpTransport: SerproHttpTransport;
   serproAuthUrl: string;
@@ -232,6 +237,12 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     listCredentialAlertsUseCase: asClass(ListCredentialAlertsUseCase).singleton(),
     acknowledgeCredentialAlertUseCase: asClass(
       AcknowledgeCredentialAlertUseCase,
+    ).singleton(),
+    ecacSitfisProcessRepository: asClass(
+      PrismaEcacSitfisProcessRepository,
+    ).singleton(),
+    rotateSitfisProtocolKeysUseCase: asClass(
+      RotateSitfisProtocolKeysUseCase,
     ).singleton(),
     serproConnectionRepository: asClass(
       PrismaSerproConnectionRepository,
