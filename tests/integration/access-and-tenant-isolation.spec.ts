@@ -12,6 +12,7 @@ import { createApplicationContainer } from '../../src/shared/container.js';
 import { generateTotpCode } from '../../src/modules/access/infra/security/totp-mfa-service.js';
 import { createTestPkcs12 } from '../../src/modules/credentials/tests/pkcs12-fixture.js';
 import type { EcacGateway } from '../../src/modules/ecac/application/ports/ecac-gateway.js';
+import { acquireEcacStreamLock } from '../../src/modules/ecac/infra/repositories/prisma-ecac-radar-repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -96,6 +97,8 @@ interface MfaSetupResponse {
 
 async function cleanDatabase(): Promise<void> {
   await prisma.auditLog.deleteMany();
+  await prisma.ecacObservationCursor.deleteMany();
+  await prisma.ecacAlert.deleteMany();
   await prisma.ecacFinding.deleteMany();
   await prisma.ecacSitfisProcess.deleteMany();
   await prisma.ecacSyncJob.deleteMany();
@@ -606,9 +609,16 @@ describe('autenticação e isolamento multiempresa', () => {
     await app.close();
   });
 
+  it('adquire o lock transacional do Radar sem retornar void ao Prisma', async () => {
+    await prisma.$transaction(async (transaction) => {
+      await acquireEcacStreamLock(transaction, 'integration:ecac-advisory-lock');
+    });
+  });
+
   it('processa Radar e-CAC de forma idempotente e mantém lotes isolados', async () => {
     const sitfisReportHash = 'd'.repeat(64);
     let gatewayCalls = 0;
+    let findingMode: 'ORIGINAL' | 'CHANGED' | 'EMPTY' = 'ORIGINAL';
     const ecacGateway: EcacGateway = {
       query: async (input) => {
         gatewayCalls += 1;
@@ -627,17 +637,26 @@ describe('autenticação e isolamento multiempresa', () => {
           fetchedAt: new Date(),
           payload: { situation: 'PENDING', companyCnpj: input.companyCnpj },
           artifactHash: sitfisReportHash,
-          findings: [
-            {
-              code: 'PENDING_DEBT',
-              category: 'DEBT',
-              title: 'Débito pendente',
-              description: 'Pendência retornada pelo adaptador de integração.',
-              severity: 'CRITICAL',
-              sourceReference: 'DEBT-001',
-              observedAt: new Date(),
-            },
-          ],
+          findings:
+            findingMode === 'EMPTY'
+              ? []
+              : [
+                  {
+                    code: 'PENDING_DEBT',
+                    category: 'DEBT',
+                    title:
+                      findingMode === 'CHANGED'
+                        ? 'Débito pendente atualizado'
+                        : 'Débito pendente',
+                    description:
+                      findingMode === 'CHANGED'
+                        ? 'Pendência reclassificada pelo adaptador.'
+                        : 'Pendência retornada pelo adaptador de integração.',
+                    severity: findingMode === 'CHANGED' ? 'WARNING' : 'CRITICAL',
+                    sourceReference: 'DEBT-001',
+                    observedAt: new Date(),
+                  },
+                ],
         };
       },
     };
@@ -817,6 +836,126 @@ describe('autenticação e isolamento multiempresa', () => {
       completedAt: expect.any(Date),
     });
 
+    const firstAlerts = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/alerts?status=OPEN',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(firstAlerts.statusCode).toBe(200);
+    expect(firstAlerts.json()).toEqual([
+      expect.objectContaining({
+        companyId: company.id,
+        queryType: 'TAX_STATUS',
+        code: 'PENDING_DEBT',
+        severity: 'CRITICAL',
+        status: 'OPEN',
+        lastChangeType: 'NEW',
+      }),
+    ]);
+    const alertId = firstAlerts.json<Array<{ id: string }>>()[0]!.id;
+    const acknowledged = await app.inject({
+      method: 'POST',
+      url: `/v1/control/ecac/alerts/${alertId}/acknowledge`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(acknowledged.statusCode).toBe(200);
+    expect(acknowledged.json()).toMatchObject({
+      id: alertId,
+      status: 'ACKNOWLEDGED',
+      acknowledgedById: tenantA.session.userId,
+    });
+
+    async function observeAgain(
+      requestKey: string,
+    ): Promise<void> {
+      const request = await app.inject({
+        method: 'POST',
+        url: '/v1/control/ecac/sync-batches',
+        headers: { authorization: `Bearer ${tenantA.accessToken}` },
+        payload: {
+          ...payload,
+          requestKey,
+        },
+      });
+      expect(request.statusCode).toBe(202);
+      const nextBatch = request.json<{ id: string }>();
+      const nextJob = await prisma.ecacSyncJob.findFirstOrThrow({
+        where: { batchId: nextBatch.id },
+      });
+      await prisma.ecacSitfisProcess.create({
+        data: {
+          tenantId: tenantA.session.tenantId,
+          jobId: nextJob.id,
+          companyId: company.id,
+          status: 'AWAITING_REPORT',
+          encryptedProtocol: 'test-only-encrypted-protocol',
+          protocolKeyVersion: 1,
+          protocolHash: 'c'.repeat(64),
+          nextAttemptAt: new Date(),
+          providerStatus: 202,
+        },
+      });
+      const processed = await app.inject({
+        method: 'POST',
+        url: '/v1/control/ecac/jobs/process',
+        headers: { authorization: `Bearer ${tenantA.accessToken}` },
+        payload: { limit: 10 },
+      });
+      expect(processed.statusCode).toBe(200);
+      expect(processed.json()).toMatchObject({ claimed: 1, succeeded: 1 });
+    }
+
+    findingMode = 'CHANGED';
+    await observeAgain('integration-radar-002');
+    const changedAlerts = await app.inject({
+      method: 'GET',
+      url: `/v1/control/ecac/alerts?companyId=${company.id}`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(changedAlerts.json()).toEqual([
+      expect.objectContaining({
+        id: alertId,
+        severity: 'WARNING',
+        status: 'OPEN',
+        lastChangeType: 'CHANGED',
+        acknowledgedAt: null,
+        acknowledgedById: null,
+      }),
+    ]);
+
+    findingMode = 'EMPTY';
+    await observeAgain('integration-radar-003');
+    const resolvedAlerts = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/alerts?status=RESOLVED',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(resolvedAlerts.json()).toEqual([
+      expect.objectContaining({
+        id: alertId,
+        status: 'RESOLVED',
+        lastChangeType: 'RESOLVED',
+        resolvedAt: expect.any(String),
+      }),
+    ]);
+
+    findingMode = 'ORIGINAL';
+    await observeAgain('integration-radar-004');
+    const reopenedAlerts = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/alerts?status=OPEN',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(reopenedAlerts.json()).toEqual([
+      expect.objectContaining({
+        id: alertId,
+        severity: 'CRITICAL',
+        status: 'OPEN',
+        lastChangeType: 'REOPENED',
+        resolvedAt: null,
+      }),
+    ]);
+
     const crossTenantRead = await app.inject({
       method: 'GET',
       url: `/v1/control/ecac/sync-batches/${firstBatch.id}`,
@@ -827,8 +966,14 @@ describe('autenticação e isolamento multiempresa', () => {
       url: '/v1/control/ecac/findings',
       headers: { authorization: `Bearer ${tenantB.accessToken}` },
     });
+    const otherTenantAlerts = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/alerts',
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
     expect(crossTenantRead.statusCode).toBe(404);
     expect(otherTenantFindings.json()).toEqual([]);
+    expect(otherTenantAlerts.json()).toEqual([]);
 
     await app.close();
   });

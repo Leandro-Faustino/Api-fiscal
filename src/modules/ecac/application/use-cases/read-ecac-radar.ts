@@ -1,11 +1,17 @@
-import { NotFoundError } from '../../../../shared/domain/app-error.js';
+import {
+  NotFoundError,
+  ValidationError,
+} from '../../../../shared/domain/app-error.js';
 import type { EcacRadarRepository } from '../ports/ecac-radar-repository.js';
 import type {
+  EcacAlert,
+  EcacAlertStatus,
   EcacFinding,
   EcacFindingSeverity,
   EcacSyncBatch,
   EcacSyncBatchStatus,
 } from '../../domain/ecac-radar.js';
+import type { ListEcacAlertsFilter } from '../ports/ecac-radar-repository.js';
 
 interface Dependencies {
   ecacRadarRepository: EcacRadarRepository;
@@ -56,5 +62,45 @@ export class ListEcacFindingsUseCase {
     severity?: EcacFindingSeverity,
   ): Promise<EcacFinding[]> {
     return this.repository.listFindings(tenantId, companyId, severity);
+  }
+}
+
+export class ListEcacAlertsUseCase {
+  private readonly repository: EcacRadarRepository;
+
+  public constructor({ ecacRadarRepository }: Dependencies) {
+    this.repository = ecacRadarRepository;
+  }
+
+  public execute(
+    tenantId: string,
+    filter: ListEcacAlertsFilter = {},
+  ): Promise<EcacAlert[]> {
+    const statuses: EcacAlertStatus[] = ['OPEN', 'ACKNOWLEDGED', 'RESOLVED'];
+    if (filter.status && !statuses.includes(filter.status)) {
+      throw new ValidationError('Status de alerta e-CAC inválido.');
+    }
+    return this.repository.listAlerts(tenantId, filter);
+  }
+}
+
+export class AcknowledgeEcacAlertUseCase {
+  private readonly repository: EcacRadarRepository;
+
+  public constructor({ ecacRadarRepository }: Dependencies) {
+    this.repository = ecacRadarRepository;
+  }
+
+  public execute(
+    tenantId: string,
+    alertId: string,
+    actorId: string,
+  ): Promise<EcacAlert> {
+    return this.repository.acknowledgeAlertWithAudit(
+      tenantId,
+      alertId,
+      actorId,
+      new Date(),
+    );
   }
 }

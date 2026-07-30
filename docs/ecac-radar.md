@@ -12,9 +12,38 @@ específico do Integra Contador fica em um adaptador substituível.
 4. Um job independente é criado para cada empresa.
 5. O processador reivindica jobs vencidos por lock otimista.
 6. Sucessos armazenam protocolo, hash e achados normalizados.
-7. Falhas transitórias recebem backoff exponencial; falhas definitivas encerram
+7. A conclusão compara os achados com o último estado aceito da mesma empresa e
+   do mesmo tipo de consulta.
+8. Falhas transitórias recebem backoff exponencial; falhas definitivas encerram
    somente o job afetado.
-8. O lote termina como `SUCCEEDED`, `PARTIAL` ou `FAILED`.
+9. O lote termina como `SUCCEEDED`, `PARTIAL` ou `FAILED`.
+
+## Mudanças e alertas
+
+Cada achado recebe duas impressões SHA-256:
+
+- `findingKey`: identidade estável formada por código e referência do provedor;
+  quando não há referência, o título normalizado é usado;
+- `contentHash`: versão da categoria, título, descrição e severidade.
+
+A primeira observação de uma pendência abre um alerta `NEW`. Consultas
+posteriores preservam o mesmo alerta:
+
+- conteúdo alterado reabre o alerta como `CHANGED`, mesmo se já reconhecido;
+- desaparecimento da pendência muda o alerta para `RESOLVED`;
+- reaparecimento muda o mesmo alerta para `REOPENED`;
+- ausência de mudança apenas atualiza o horário da última observação.
+
+A API lista alertas por empresa, consulta, severidade e estado em
+`GET /v1/control/ecac/alerts`. Um alerta aberto pode ser reconhecido em
+`POST /v1/control/ecac/alerts/:alertId/acknowledge`. Reconhecimento e mudanças
+automáticas são isolados por escritório e auditados.
+
+Cada job recebe uma sequência monotônica no PostgreSQL. Um cursor por empresa e
+tipo de consulta usa essa sequência para impedir regressão do estado quando uma
+resposta antiga termina depois de uma nova. A reconciliação usa um lock
+transacional do PostgreSQL por fluxo; a conclusão do job, os achados, os alertas
+e o cursor são gravados atomicamente.
 
 ## Privacidade e segurança
 
@@ -23,6 +52,7 @@ específico do Integra Contador fica em um adaptador substituível.
 - Procuração e certificado são revalidados no momento do processamento.
 - O certificado e sua senha não trafegam pelo caso de uso do Radar.
 - A resposta bruta do provedor não é persistida.
+- Alertas contêm apenas o achado normalizado e hashes, nunca o envelope bruto.
 - Erros ficam limitados a mensagens sanitizadas de até 500 caracteres.
 - Eventos relevantes geram auditoria sem conteúdo fiscal bruto.
 

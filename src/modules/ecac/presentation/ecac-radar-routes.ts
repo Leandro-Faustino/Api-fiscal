@@ -2,6 +2,7 @@ import type { FastifyInstance, preHandlerHookHandler } from 'fastify';
 import type { Cradle } from '../../../shared/container.js';
 import { authorize } from '../../../shared/infra/http/authentication.js';
 import type {
+  EcacAlertStatus,
   EcacFindingSeverity,
   EcacQueryType,
   EcacSyncBatchStatus,
@@ -37,6 +38,58 @@ const findingSchema = {
     sourceReference: { type: ['string', 'null'] },
     observedAt: { type: 'string', format: 'date-time' },
     createdAt: { type: 'string', format: 'date-time' },
+  },
+} as const;
+
+const alertSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'tenantId',
+    'companyId',
+    'latestJobId',
+    'queryType',
+    'findingKey',
+    'code',
+    'category',
+    'title',
+    'description',
+    'severity',
+    'status',
+    'lastChangeType',
+    'firstObservedAt',
+    'lastObservedAt',
+    'acknowledgedAt',
+    'acknowledgedById',
+    'resolvedAt',
+    'createdAt',
+    'updatedAt',
+  ],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    tenantId: { type: 'string', format: 'uuid' },
+    companyId: { type: 'string', format: 'uuid' },
+    latestJobId: { type: 'string', format: 'uuid' },
+    queryType: { type: 'string', enum: ['TAX_STATUS', 'DEBTS', 'MAILBOX'] },
+    findingKey: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+    code: { type: 'string' },
+    category: { type: 'string' },
+    title: { type: 'string' },
+    description: { type: ['string', 'null'] },
+    severity: { type: 'string', enum: ['INFO', 'WARNING', 'CRITICAL'] },
+    status: { type: 'string', enum: ['OPEN', 'ACKNOWLEDGED', 'RESOLVED'] },
+    lastChangeType: {
+      type: 'string',
+      enum: ['NEW', 'CHANGED', 'REOPENED', 'RESOLVED'],
+    },
+    firstObservedAt: { type: 'string', format: 'date-time' },
+    lastObservedAt: { type: 'string', format: 'date-time' },
+    acknowledgedAt: { type: ['string', 'null'], format: 'date-time' },
+    acknowledgedById: { type: ['string', 'null'], format: 'uuid' },
+    resolvedAt: { type: ['string', 'null'], format: 'date-time' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
   },
 } as const;
 
@@ -156,6 +209,17 @@ interface ProcessBody {
 interface FindingQuery {
   companyId?: string;
   severity?: EcacFindingSeverity;
+}
+
+interface AlertQuery {
+  companyId?: string;
+  queryType?: EcacQueryType;
+  severity?: EcacFindingSeverity;
+  status?: EcacAlertStatus;
+}
+
+interface AlertParams {
+  alertId: string;
 }
 
 export async function ecacRadarRoutes(
@@ -339,5 +403,69 @@ export async function ecacRadarRoutes(
         request.query.companyId,
         request.query.severity,
       ),
+  );
+
+  app.get<{ Querystring: AlertQuery }>(
+    '/v1/control/ecac/alerts',
+    {
+      preHandler: [authenticate, authorize('ecac:read')],
+      schema: {
+        security: [{ bearerAuth: [] }],
+        tags: ['Control - Radar e-CAC'],
+        summary: 'Listar alertas derivados de mudanças entre consultas',
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            companyId: { type: 'string', format: 'uuid' },
+            queryType: {
+              type: 'string',
+              enum: ['TAX_STATUS', 'DEBTS', 'MAILBOX'],
+            },
+            severity: {
+              type: 'string',
+              enum: ['INFO', 'WARNING', 'CRITICAL'],
+            },
+            status: {
+              type: 'string',
+              enum: ['OPEN', 'ACKNOWLEDGED', 'RESOLVED'],
+            },
+          },
+        },
+        response: { 200: { type: 'array', items: alertSchema } },
+      },
+    },
+    async (request) =>
+      cradle.listEcacAlertsUseCase.execute(
+        request.authContext!.tenantId,
+        request.query,
+      ),
+  );
+
+  app.post<{ Params: AlertParams }>(
+    '/v1/control/ecac/alerts/:alertId/acknowledge',
+    {
+      preHandler: [authenticate, authorize('ecac:write')],
+      schema: {
+        security: [{ bearerAuth: [] }],
+        tags: ['Control - Radar e-CAC'],
+        summary: 'Reconhecer um alerta e-CAC aberto',
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['alertId'],
+          properties: { alertId: { type: 'string', format: 'uuid' } },
+        },
+        response: { 200: alertSchema },
+      },
+    },
+    async (request) => {
+      const context = request.authContext!;
+      return cradle.acknowledgeEcacAlertUseCase.execute(
+        context.tenantId,
+        request.params.alertId,
+        context.userId,
+      );
+    },
   );
 }
