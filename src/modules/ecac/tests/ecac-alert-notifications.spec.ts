@@ -152,7 +152,169 @@ describe('notificações de alertas e-CAC', () => {
   it('valida canal e severidade antes de gravar preferência', async () => {
     const upsertPreference = vi.fn(repository().upsertPreference);
     const useCase = new UpdateEcacNotificationPreferenceUseCase({
-      e׾�����k�w��`vi.fn(async () => null);
+      ecacAlertNotificationRepository: repository({ upsertPreference }),
+    });
+
+    await expect(
+      useCase.execute({
+        tenantId,
+        userId,
+        channel: 'EMAIL',
+        enabled: true,
+        minimumSeverity: 'CRITICAL',
+        includeResolved: true,
+      }),
+    ).resolves.toMatchObject({
+      channel: 'EMAIL',
+      enabled: true,
+      minimumSeverity: 'CRITICAL',
+      includeResolved: true,
+    });
+    expect(upsertPreference).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId,
+        userId,
+        channel: 'EMAIL',
+        minimumSeverity: 'CRITICAL',
+      }),
+    );
+  });
+
+  it('rejeita filtro de evento inválido sem consultar o repositório', async () => {
+    const listEvents = vi.fn();
+    const useCase = new ListEcacNotificationEventsUseCase({
+      ecacAlertNotificationRepository: repository({ listEvents }),
+    });
+
+    expect(() =>
+      useCase.execute(tenantId, userId, { status: 'OPEN' as never }),
+    ).toThrowError('Status de evento de notificação inválido.');
+    expect(listEvents).not.toHaveBeenCalled();
+  });
+
+  it('normaliza filtros operacionais antes de listar eventos', async () => {
+    const listEvents = vi.fn(async () => []);
+    const useCase = new ListEcacNotificationEventsUseCase({
+      ecacAlertNotificationRepository: repository({ listEvents }),
+    });
+    const scheduledFrom = '2026-07-26T00:00:00.000Z';
+    const scheduledTo = '2026-07-27T00:00:00.000Z';
+
+    await expect(
+      useCase.execute(tenantId, userId, {
+        channel: 'EMAIL',
+        status: 'FAILED',
+        companyId: '10000000-0000-4000-8000-000000000006',
+        queryType: 'MAILBOX',
+        severity: 'WARNING',
+        scheduledFrom,
+        scheduledTo,
+        limit: 25,
+      }),
+    ).resolves.toEqual([]);
+    expect(listEvents).toHaveBeenCalledWith(
+      tenantId,
+      userId,
+      expect.objectContaining({
+        channel: 'EMAIL',
+        status: 'FAILED',
+        companyId: '10000000-0000-4000-8000-000000000006',
+        queryType: 'MAILBOX',
+        severity: 'WARNING',
+        scheduledFrom: new Date(scheduledFrom),
+        scheduledTo: new Date(scheduledTo),
+        limit: 25,
+      }),
+    );
+  });
+
+  it('aplica limite padrão ao listar eventos', async () => {
+    const listEvents = vi.fn(async () => []);
+    const useCase = new ListEcacNotificationEventsUseCase({
+      ecacAlertNotificationRepository: repository({ listEvents }),
+    });
+
+    await useCase.execute(tenantId, userId);
+
+    expect(listEvents).toHaveBeenCalledWith(
+      tenantId,
+      userId,
+      expect.objectContaining({ limit: 50 }),
+    );
+  });
+
+  it('rejeita período e limite inválidos ao listar eventos', async () => {
+    const listEvents = vi.fn();
+    const useCase = new ListEcacNotificationEventsUseCase({
+      ecacAlertNotificationRepository: repository({ listEvents }),
+    });
+
+    expect(() =>
+      useCase.execute(tenantId, userId, {
+        scheduledFrom: '2026-07-28T00:00:00.000Z',
+        scheduledTo: '2026-07-27T00:00:00.000Z',
+      }),
+    ).toThrowError('Período de agendamento inválido.');
+    expect(() =>
+      useCase.execute(tenantId, userId, { scheduledFrom: 'sem-data' }),
+    ).toThrowError('Filtro de data inválido.');
+    expect(() =>
+      useCase.execute(tenantId, userId, { limit: 201 }),
+    ).toThrowError('A listagem de eventos deve ter limite entre 1 e 200.');
+    expect(listEvents).not.toHaveBeenCalled();
+  });
+
+  it('consulta detalhe de evento do próprio usuário', async () => {
+    const getEvent = vi.fn(repository().getEvent);
+    const useCase = new GetEcacNotificationEventUseCase({
+      ecacAlertNotificationRepository: repository({ getEvent }),
+    });
+
+    await expect(useCase.execute(tenantId, userId, eventId)).resolves.toMatchObject({
+      id: eventId,
+      tenantId,
+      userId,
+      status: 'PENDING',
+    });
+    expect(getEvent).toHaveBeenCalledWith(tenantId, userId, eventId);
+  });
+
+  it('retorna não encontrado quando detalhe de evento não pertence ao usuário', async () => {
+    const getEvent = vi.fn(async () => null);
+    const useCase = new GetEcacNotificationEventUseCase({
+      ecacAlertNotificationRepository: repository({ getEvent }),
+    });
+
+    await expect(useCase.execute(tenantId, userId, eventId)).rejects.toMatchObject({
+      code: 'ECAC_NOTIFICATION_EVENT_NOT_FOUND',
+    });
+    expect(getEvent).toHaveBeenCalledWith(tenantId, userId, eventId);
+  });
+
+  it('lista auditoria de evento do próprio usuário', async () => {
+    const getEvent = vi.fn(repository().getEvent);
+    const listEventAuditTrail = vi.fn(repository().listEventAuditTrail);
+    const useCase = new ListEcacNotificationEventAuditUseCase({
+      ecacAlertNotificationRepository: repository({
+        getEvent,
+        listEventAuditTrail,
+      }),
+    });
+
+    await expect(useCase.execute(tenantId, userId, eventId, 10)).resolves.toEqual([
+      expect.objectContaining({
+        tenantId,
+        actorId: userId,
+        action: 'ecac.notification_event.retry_scheduled',
+        entityId: eventId,
+      }),
+    ]);
+    expect(getEvent).toHaveBeenCalledWith(tenantId, userId, eventId);
+    expect(listEventAuditTrail).toHaveBeenCalledWith(tenantId, eventId, 10);
+  });
+
+  it('não lista auditoria de evento de outro usuário', async () => {
+    const getEvent = vi.fn(async () => null);
     const listEventAuditTrail = vi.fn();
     const useCase = new ListEcacNotificationEventAuditUseCase({
       ecacAlertNotificationRepository: repository({
