@@ -5,6 +5,7 @@ import type {
   EcacNotificationChannel,
   EcacNotificationEventSummary,
   EcacNotificationEventStatus,
+  EcacQueryType,
 } from '../../domain/ecac-radar.js';
 
 export interface UpsertEcacNotificationPreferenceInput {
@@ -20,6 +21,12 @@ export interface UpsertEcacNotificationPreferenceInput {
 export interface ListEcacNotificationEventsFilter {
   channel?: EcacNotificationChannel;
   status?: EcacNotificationEventStatus;
+  companyId?: string;
+  queryType?: EcacQueryType;
+  severity?: EcacFindingSeverity;
+  scheduledFrom?: Date;
+  scheduledTo?: Date;
+  limit?: number;
 }
 
 export interface ClaimEcacNotificationEventsInput {
