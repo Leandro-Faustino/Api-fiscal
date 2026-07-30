@@ -199,7 +199,16 @@ const notificationEventAuditEntrySchema = {
     action: { type: 'string' },
     entityType: { type: 'string' },
     entityId: { type: 'string', format: 'uuid' },
-    metadata: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+    metadata: {
+      anyOf: [
+        { type: 'object', additionalProperties: true },
+        { type: 'array' },
+        { type: 'string' },
+        { type: 'number' },
+        { type: 'boolean' },
+        { type: 'null' },
+      ],
+    },
     occurredAt: { type: 'string', format: 'date-time' },
   },
 } as const;
