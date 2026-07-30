@@ -84,6 +84,17 @@ const envSchema = z
       .min(1_000)
       .max(3_600_000)
       .default(300_000),
+    ECAC_EMAIL_PROVIDER: z.enum(['disabled', 'http']).default('disabled'),
+    ECAC_EMAIL_HTTP_URL: z.string().trim().default(''),
+    ECAC_EMAIL_HTTP_AUTHORIZATION: z.string().trim().default(''),
+    ECAC_EMAIL_FROM: z.string().trim().default(''),
+    ECAC_EMAIL_SUBJECT_PREFIX: z.string().trim().max(80).default('[API Fiscal]'),
+    ECAC_EMAIL_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(60_000)
+      .default(10_000),
   })
   .superRefine((env, context) => {
     const encodedVaultKey = env.CREDENTIAL_VAULT_MASTER_KEY.trim();
@@ -163,6 +174,49 @@ const envSchema = z
         message:
           'O TTL de processamento das notificações e-CAC deve ser maior que o atraso de retry.',
       });
+    }
+
+    if (env.ECAC_EMAIL_PROVIDER === 'http') {
+      if (!env.ECAC_EMAIL_HTTP_URL) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ECAC_EMAIL_HTTP_URL'],
+          message: 'A URL HTTP das notificações e-CAC é obrigatória.',
+        });
+      }
+      if (!env.ECAC_EMAIL_FROM) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ECAC_EMAIL_FROM'],
+          message: 'O remetente das notificações e-CAC é obrigatório.',
+        });
+      }
+      if (env.ECAC_EMAIL_HTTP_URL) {
+        try {
+          const emailUrl = new URL(env.ECAC_EMAIL_HTTP_URL);
+          if (
+            emailUrl.protocol !== 'https:' &&
+            !(env.NODE_ENV !== 'production' && emailUrl.hostname === 'localhost')
+          ) {
+            throw new Error();
+          }
+        } catch {
+          context.addIssue({
+            code: 'custom',
+            path: ['ECAC_EMAIL_HTTP_URL'],
+            message:
+              'A URL HTTP das notificações e-CAC deve ser HTTPS, exceto localhost fora de produção.',
+          });
+        }
+      }
+      if (env.NODE_ENV === 'production' && !env.ECAC_EMAIL_HTTP_AUTHORIZATION) {
+        context.addIssue({
+          code: 'custom',
+          path: ['ECAC_EMAIL_HTTP_AUTHORIZATION'],
+          message:
+            'A autorização HTTP das notificações e-CAC é obrigatória em produção.',
+        });
+      }
     }
 
     if (env.NODE_ENV === 'production') {

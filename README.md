@@ -35,6 +35,7 @@ API em Node.js/TypeScript para a plataforma de gestão fiscal e inteligência co
 - autenticação OAuth2 com mTLS, cache temporário de tokens e consulta da Caixa Postal
 - SITFIS 2.0 persistente com protocolo cifrado, espera orientada pelo provedor e
   descarte do PDF após hash seguro
+- preferências, caixa de saída, worker e envio HTTP configurável para alertas e-CAC
 - tabela inicial de parâmetros fiscais por vigência (RNF-03)
 - testes unitários com Vitest
 
@@ -74,6 +75,12 @@ export AUTH_RATE_LIMIT_WINDOW_MS=60000
 export SERPRO_AUTH_URL=https://autenticacao.sapi.serpro.gov.br/authenticate
 export SERPRO_API_BASE_URL=https://gateway.apiserpro.serpro.gov.br/integra-contador/v1
 export SERPRO_TIMEOUT_MS=15000
+export ECAC_EMAIL_PROVIDER=disabled
+export ECAC_EMAIL_HTTP_URL=
+export ECAC_EMAIL_HTTP_AUTHORIZATION=
+export ECAC_EMAIL_FROM=
+export ECAC_EMAIL_SUBJECT_PREFIX="[API Fiscal]"
+export ECAC_EMAIL_TIMEOUT_MS=10000
 export EXPOSE_RECOVERY_TOKENS=true
 export SEED_OWNER_EMAIL=<email-local>
 export SEED_OWNER_PASSWORD=<senha-local-forte>
@@ -189,7 +196,9 @@ unitários, testes de integração, checagem de tipos e build.
 - O adaptador Integra Contador já autentica com mTLS, consulta o indicador de
   novas mensagens da Caixa Postal e executa o fluxo persistente do SITFIS.
   O worker agendado processa a fila global com lease por token e desligamento
-  gracioso. Autentica-Procurador ainda será conectado.
+  gracioso. O worker de notificações já entrega alertas internos e pode enviar
+  alertas e-CAC por API HTTP de e-mail quando configurado. Autentica-Procurador ainda será
+  conectado.
 - A BrasilAPI é o primeiro adaptador de consulta cadastral, não uma garantia de fonte oficial ou SLA de produção.
 - Nenhuma faixa, alíquota, sublimite ou prazo fiscal foi codificado.
 - Os demais itens do Control estão priorizados em [docs/control-roadmap.md](docs/control-roadmap.md).

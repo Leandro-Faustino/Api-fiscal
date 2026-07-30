@@ -114,4 +114,61 @@ describe('configuração do ambiente', () => {
       'O TTL de processamento das notificações e-CAC deve ser maior que o atraso de retry.',
     );
   });
+
+  it('mantém e-mail e-CAC desabilitado por padrão e valida HTTP quando habilitado', () => {
+    const disabled = loadEnv(requiredEnvironment);
+    expect(disabled.ECAC_EMAIL_PROVIDER).toBe('disabled');
+
+    const http = loadEnv({
+      ...requiredEnvironment,
+      ECAC_EMAIL_PROVIDER: 'http',
+      ECAC_EMAIL_HTTP_URL: 'https://email.example.com/send',
+      ECAC_EMAIL_HTTP_AUTHORIZATION: 'Bearer secret',
+      ECAC_EMAIL_FROM: 'API Fiscal <alertas@example.com>',
+      ECAC_EMAIL_SUBJECT_PREFIX: '[Control]',
+      ECAC_EMAIL_TIMEOUT_MS: '5000',
+    });
+    expect(http.ECAC_EMAIL_PROVIDER).toBe('http');
+    expect(http.ECAC_EMAIL_HTTP_URL).toBe('https://email.example.com/send');
+    expect(http.ECAC_EMAIL_TIMEOUT_MS).toBe(5000);
+
+    expect(() =>
+      loadEnv({
+        ...requiredEnvironment,
+        ECAC_EMAIL_PROVIDER: 'http',
+        ECAC_EMAIL_FROM: 'API Fiscal <alertas@example.com>',
+      }),
+    ).toThrow('A URL HTTP das notificações e-CAC é obrigatória.');
+
+    expect(() =>
+      loadEnv({
+        ...requiredEnvironment,
+        ECAC_EMAIL_PROVIDER: 'http',
+        ECAC_EMAIL_HTTP_URL: 'https://email.example.com/send',
+      }),
+    ).toThrow('O remetente das notificações e-CAC é obrigatório.');
+
+    expect(() =>
+      loadEnv({
+        ...requiredEnvironment,
+        ECAC_EMAIL_PROVIDER: 'http',
+        ECAC_EMAIL_HTTP_URL: 'http://email.example.com/send',
+        ECAC_EMAIL_FROM: 'API Fiscal <alertas@example.com>',
+      }),
+    ).toThrow(
+      'A URL HTTP das notificações e-CAC deve ser HTTPS, exceto localhost fora de produção.',
+    );
+
+    expect(() =>
+      loadEnv({
+        ...requiredEnvironment,
+        NODE_ENV: 'production',
+        ECAC_EMAIL_PROVIDER: 'http',
+        ECAC_EMAIL_HTTP_URL: 'https://email.example.com/send',
+        ECAC_EMAIL_FROM: 'API Fiscal <alertas@example.com>',
+      }),
+    ).toThrow(
+      'A autorização HTTP das notificações e-CAC é obrigatória em produção.',
+    );
+  });
 });

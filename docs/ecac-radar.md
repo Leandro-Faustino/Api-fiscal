@@ -48,9 +48,10 @@ aquele tipo de mudança. A API lista a caixa de saída do usuário em
 `GET /v1/control/ecac/notification-events` e permite marcar a entrega interna em
 `POST /v1/control/ecac/notification-events/:eventId/deliver`.
 
-Este marco ainda não envia mensagens para provedores externos. Ele deixa a caixa
-de saída persistente, idempotente e isolada por escritório para o próximo worker
-de entrega.
+O worker de notificações processa essa caixa de saída em um processo separado.
+Eventos `IN_APP` são entregues internamente. Eventos `EMAIL` chamam uma API HTTP
+de envio quando `ECAC_EMAIL_PROVIDER=http`; com o provedor desabilitado, a falha
+é terminal e auditável, sem retry inútil.
 
 Cada job recebe uma sequência monotônica no PostgreSQL. Um cursor por empresa e
 tipo de consulta usa essa sequência para impedir regressão do estado quando uma
@@ -154,3 +155,15 @@ correspondente.
 Para desenvolvimento local do worker, use `npm run dev:ecac-worker`. A API e o
 worker são processos independentes e compartilham somente a fila persistida no
 PostgreSQL.
+
+Para desenvolvimento local do worker de notificações, use
+`npm run dev:ecac-notification-worker`. As variáveis de entrega por e-mail são:
+
+| Variável | Padrão | Uso |
+|---|---:|---|
+| `ECAC_EMAIL_PROVIDER` | `disabled` | Use `http` para habilitar envio externo |
+| `ECAC_EMAIL_HTTP_URL` | vazio | Endpoint HTTPS de envio |
+| `ECAC_EMAIL_HTTP_AUTHORIZATION` | vazio | Valor do cabeçalho `Authorization` |
+| `ECAC_EMAIL_FROM` | vazio | Remetente usado nas notificações |
+| `ECAC_EMAIL_SUBJECT_PREFIX` | `[API Fiscal]` | Prefixo do assunto |
+| `ECAC_EMAIL_TIMEOUT_MS` | `10000` | Timeout de conexão e envio |
