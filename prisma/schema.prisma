@@ -123,6 +123,17 @@ enum EcacAlertChangeType {
   RESOLVED
 }
 
+enum EcacNotificationChannel {
+  IN_APP
+  EMAIL
+}
+
+enum EcacNotificationEventStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
 enum SerproConnectionStatus {
   ACTIVE
   REVOKED
@@ -150,6 +161,8 @@ model Tenant {
   ecacSyncJobs           EcacSyncJob[]
   ecacFindings           EcacFinding[]
   ecacAlerts             EcacAlert[]
+  ecacNotificationPrefs  EcacAlertNotificationPreference[]
+  ecacNotificationEvents EcacAlertNotificationEvent[]
   ecacObservationCursors EcacObservationCursor[]
   ecacSitfisProcesses    EcacSitfisProcess[]
   serproConnection       SerproConnection?
@@ -182,6 +195,8 @@ model User {
   acknowledgedAlerts          CredentialAlert[]    @relation("CredentialAlertAcknowledgedBy")
   requestedEcacBatches        EcacSyncBatch[]      @relation("EcacBatchRequester")
   acknowledgedEcacAlerts      EcacAlert[]          @relation("EcacAlertAcknowledgedBy")
+  ecacNotificationPrefs       EcacAlertNotificationPreference[]
+  ecacNotificationEvents      EcacAlertNotificationEvent[]
   configuredSerproConnections SerproConnection[]   @relation("SerproConnectionConfigurer")
   createdAt                   DateTime             @default(now()) @map("created_at")
   updatedAt                   DateTime             @updatedAt @map("updated_at")
@@ -596,6 +611,7 @@ model EcacAlert {
   company          Company             @relation(fields: [tenantId, companyId], references: [tenantId, id], onDelete: Cascade)
   latestJob        EcacSyncJob         @relation("EcacAlertLatestJob", fields: [tenantId, latestJobId], references: [tenantId, id], onDelete: Restrict)
   acknowledgedBy   User?               @relation("EcacAlertAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  notificationEvents EcacAlertNotificationEvent[]
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
 
@@ -606,6 +622,54 @@ model EcacAlert {
   @@index([latestJobId])
   @@index([acknowledgedById])
   @@map("ecac_alerts")
+}
+
+model EcacAlertNotificationPreference {
+  id              String                  @id @default(uuid()) @db.Uuid
+  tenantId        String                  @map("tenant_id") @db.Uuid
+  userId          String                  @map("user_id") @db.Uuid
+  channel         EcacNotificationChannel
+  enabled         Boolean                 @default(true)
+  minimumSeverity EcacFindingSeverity     @default(WARNING) @map("minimum_severity")
+  includeResolved Boolean                 @default(false) @map("include_resolved")
+  tenant          Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  @@unique([tenantId, userId, channel])
+  @@index([tenantId, userId])
+  @@map("ecac_alert_notification_preferences")
+}
+
+model EcacAlertNotificationEvent {
+  id           String                      @id @default(uuid()) @db.Uuid
+  tenantId     String                      @map("tenant_id") @db.Uuid
+  alertId      String                      @map("alert_id") @db.Uuid
+  userId       String                      @map("user_id") @db.Uuid
+  companyId    String                      @map("company_id") @db.Uuid
+  queryType    EcacQueryType               @map("query_type")
+  channel      EcacNotificationChannel
+  status       EcacNotificationEventStatus @default(PENDING)
+  changeType   EcacAlertChangeType         @map("change_type")
+  severity     EcacFindingSeverity
+  title        String
+  dedupeKey    String                      @map("dedupe_key") @db.Char(64)
+  scheduledAt  DateTime                    @map("scheduled_at")
+  deliveredAt  DateTime?                   @map("delivered_at")
+  failedAt     DateTime?                   @map("failed_at")
+  failureCode  String?                     @map("failure_code")
+  tenant       Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  alert        EcacAlert                   @relation(fields: [tenantId, alertId], references: [tenantId, id], onDelete: Cascade)
+  user         User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime                    @default(now()) @map("created_at")
+  updatedAt    DateTime                    @updatedAt @map("updated_at")
+
+  @@unique([tenantId, dedupeKey])
+  @@unique([tenantId, id])
+  @@index([tenantId, userId, status, scheduledAt])
+  @@index([tenantId, alertId])
+  @@map("ecac_alert_notification_events")
 }
 
 model EcacObservationCursor {

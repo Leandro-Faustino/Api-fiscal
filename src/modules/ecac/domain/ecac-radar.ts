@@ -22,6 +22,10 @@ export type EcacAlertStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
 
 export type EcacAlertChangeType = 'NEW' | 'CHANGED' | 'REOPENED' | 'RESOLVED';
 
+export type EcacNotificationChannel = 'IN_APP' | 'EMAIL';
+
+export type EcacNotificationEventStatus = 'PENDING' | 'DELIVERED' | 'FAILED';
+
 export interface EcacFinding {
   id: string;
   tenantId: string;
@@ -56,6 +60,38 @@ export interface EcacAlert {
   acknowledgedAt: Date | null;
   acknowledgedById: string | null;
   resolvedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface EcacAlertNotificationPreference {
+  id: string;
+  tenantId: string;
+  userId: string;
+  channel: EcacNotificationChannel;
+  enabled: boolean;
+  minimumSeverity: EcacFindingSeverity;
+  includeResolved: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface EcacAlertNotificationEvent {
+  id: string;
+  tenantId: string;
+  alertId: string;
+  userId: string;
+  companyId: string;
+  queryType: EcacQueryType;
+  channel: EcacNotificationChannel;
+  status: EcacNotificationEventStatus;
+  changeType: EcacAlertChangeType;
+  severity: EcacFindingSeverity;
+  title: string;
+  scheduledAt: Date;
+  deliveredAt: Date | null;
+  failedAt: Date | null;
+  failureCode: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -4,6 +4,8 @@ import { authorize } from '../../../shared/infra/http/authentication.js';
 import type {
   EcacAlertStatus,
   EcacFindingSeverity,
+  EcacNotificationChannel,
+  EcacNotificationEventStatus,
   EcacQueryType,
   EcacSyncBatchStatus,
 } from '../domain/ecac-radar.js';
@@ -88,6 +90,79 @@ const alertSchema = {
     acknowledgedAt: { type: ['string', 'null'], format: 'date-time' },
     acknowledgedById: { type: ['string', 'null'], format: 'uuid' },
     resolvedAt: { type: ['string', 'null'], format: 'date-time' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+} as const;
+
+const notificationPreferenceSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'tenantId',
+    'userId',
+    'channel',
+    'enabled',
+    'minimumSeverity',
+    'includeResolved',
+    'createdAt',
+    'updatedAt',
+  ],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    tenantId: { type: 'string', format: 'uuid' },
+    userId: { type: 'string', format: 'uuid' },
+    channel: { type: 'string', enum: ['IN_APP', 'EMAIL'] },
+    enabled: { type: 'boolean' },
+    minimumSeverity: { type: 'string', enum: ['INFO', 'WARNING', 'CRITICAL'] },
+    includeResolved: { type: 'boolean' },
+    createdAt: { type: 'string', format: 'date-time' },
+    updatedAt: { type: 'string', format: 'date-time' },
+  },
+} as const;
+
+const notificationEventSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'tenantId',
+    'alertId',
+    'userId',
+    'companyId',
+    'queryType',
+    'channel',
+    'status',
+    'changeType',
+    'severity',
+    'title',
+    'scheduledAt',
+    'deliveredAt',
+    'failedAt',
+    'failureCode',
+    'createdAt',
+    'updatedAt',
+  ],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    tenantId: { type: 'string', format: 'uuid' },
+    alertId: { type: 'string', format: 'uuid' },
+    userId: { type: 'string', format: 'uuid' },
+    companyId: { type: 'string', format: 'uuid' },
+    queryType: { type: 'string', enum: ['TAX_STATUS', 'DEBTS', 'MAILBOX'] },
+    channel: { type: 'string', enum: ['IN_APP', 'EMAIL'] },
+    status: { type: 'string', enum: ['PENDING', 'DELIVERED', 'FAILED'] },
+    changeType: {
+      type: 'string',
+      enum: ['NEW', 'CHANGED', 'REOPENED', 'RESOLVED'],
+    },
+    severity: { type: 'string', enum: ['INFO', 'WARNING', 'CRITICAL'] },
+    title: { type: 'string' },
+    scheduledAt: { type: 'string', format: 'date-time' },
+    deliveredAt: { type: ['string', 'null'], format: 'date-time' },
+    failedAt: { type: ['string', 'null'], format: 'date-time' },
+    failureCode: { type: ['string', 'null'] },
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
   },
@@ -220,6 +295,25 @@ interface AlertQuery {
 
 interface AlertParams {
   alertId: string;
+}
+
+interface NotificationPreferenceParams {
+  channel: EcacNotificationChannel;
+}
+
+interface NotificationPreferenceBody {
+  enabled: boolean;
+  minimumSeverity: EcacFindingSeverity;
+  includeResolved?: boolean;
+}
+
+interface NotificationEventQuery {
+  channel?: EcacNotificationChannel;
+  status?: EcacNotificationEventStatus;
+}
+
+interface NotificationEventParams {
+  eventId: string;
 }
 
 export async function ecacRadarRoutes(
@@ -465,6 +559,132 @@ export async function ecacRadarRoutes(
         context.tenantId,
         request.params.alertId,
         context.userId,
+      );
+    },
+  );
+
+  app.get(
+    '/v1/control/ecac/notification-preferences',
+    {
+      preHandler: [authenticate, authorize('ecac:read')],
+      schema: {
+        security: [{ bearerAuth: [] }],
+        tags: ['Control - Radar e-CAC'],
+        summary: 'Listar preferências de notificação e-CAC do usuário autenticado',
+        response: {
+          200: { type: 'array', items: notificationPreferenceSchema },
+        },
+      },
+    },
+    async (request) => {
+      const context = request.authContext!;
+      return cradle.listEcacNotificationPreferencesUseCase.execute(
+        context.tenantId,
+        context.userId,
+      );
+    },
+  );
+
+  app.put<{
+    Params: NotificationPreferenceParams;
+    Body: NotificationPreferenceBody;
+  }>(
+    '/v1/control/ecac/notification-preferences/:channel',
+    {
+      preHandler: [authenticate, authorize('ecac:write')],
+      schema: {
+        security: [{ bearerAuth: [] }],
+        tags: ['Control - Radar e-CAC'],
+        summary: 'Configurar um canal de notificação e-CAC do usuário autenticado',
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['channel'],
+          properties: {
+            channel: { type: 'string', enum: ['IN_APP', 'EMAIL'] },
+          },
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['enabled', 'minimumSeverity'],
+          properties: {
+            enabled: { type: 'boolean' },
+            minimumSeverity: {
+              type: 'string',
+              enum: ['INFO', 'WARNING', 'CRITICAL'],
+            },
+            includeResolved: { type: 'boolean', default: false },
+          },
+        },
+        response: { 200: notificationPreferenceSchema },
+      },
+    },
+    async (request) => {
+      const context = request.authContext!;
+      return cradle.updateEcacNotificationPreferenceUseCase.execute({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        channel: request.params.channel,
+        enabled: request.body.enabled,
+        minimumSeverity: request.body.minimumSeverity,
+        includeResolved: request.body.includeResolved ?? false,
+      });
+    },
+  );
+
+  app.get<{ Querystring: NotificationEventQuery }>(
+    '/v1/control/ecac/notification-events',
+    {
+      preHandler: [authenticate, authorize('ecac:read')],
+      schema: {
+        security: [{ bearerAuth: [] }],
+        tags: ['Control - Radar e-CAC'],
+        summary: 'Listar eventos de notificação e-CAC do usuário autenticado',
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            channel: { type: 'string', enum: ['IN_APP', 'EMAIL'] },
+            status: { type: 'string', enum: ['PENDING', 'DELIVERED', 'FAILED'] },
+          },
+        },
+        response: { 200: { type: 'array', items: notificationEventSchema } },
+      },
+    },
+    async (request) => {
+      const context = request.authContext!;
+      return cradle.listEcacNotificationEventsUseCase.execute(
+        context.tenantId,
+        context.userId,
+        request.query,
+      );
+    },
+  );
+
+  app.post<{ Params: NotificationEventParams }>(
+    '/v1/control/ecac/notification-events/:eventId/deliver',
+    {
+      preHandler: [authenticate, authorize('ecac:write')],
+      schema: {
+        security: [{ bearerAuth: [] }],
+        tags: ['Control - Radar e-CAC'],
+        summary: 'Marcar um evento de notificação e-CAC como entregue',
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['eventId'],
+          properties: { eventId: { type: 'string', format: 'uuid' } },
+        },
+        response: { 200: notificationEventSchema },
+      },
+    },
+    async (request) => {
+      const context = request.authContext!;
+      return cradle.markEcacNotificationEventDeliveredUseCase.execute(
+        context.tenantId,
+        context.userId,
+        request.params.eventId,
       );
     },
   );

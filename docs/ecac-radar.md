@@ -39,6 +39,19 @@ A API lista alertas por empresa, consulta, severidade e estado em
 `POST /v1/control/ecac/alerts/:alertId/acknowledge`. Reconhecimento e mudanças
 automáticas são isolados por escritório e auditados.
 
+Cada usuário pode configurar canais de notificação do Radar e-CAC em
+`PUT /v1/control/ecac/notification-preferences/:channel`. O primeiro corte
+suporta `IN_APP` e `EMAIL`, severidade mínima e inclusão opcional de eventos
+`RESOLVED`. Quando um alerta muda, a mesma transação cria eventos deduplicados em
+`ecac_alert_notification_events` para usuários ativos cujas preferências aceitam
+aquele tipo de mudança. A API lista a caixa de saída do usuário em
+`GET /v1/control/ecac/notification-events` e permite marcar a entrega interna em
+`POST /v1/control/ecac/notification-events/:eventId/deliver`.
+
+Este marco ainda não envia mensagens para provedores externos. Ele deixa a caixa
+de saída persistente, idempotente e isolada por escritório para o próximo worker
+de entrega.
+
 Cada job recebe uma sequência monotônica no PostgreSQL. Um cursor por empresa e
 tipo de consulta usa essa sequência para impedir regressão do estado quando uma
 resposta antiga termina depois de uma nova. A reconciliação usa um lock
