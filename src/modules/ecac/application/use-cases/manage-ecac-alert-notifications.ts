@@ -22,6 +22,7 @@ const channels: EcacNotificationChannel[] = ['IN_APP', 'EMAIL'];
 const severities: EcacFindingSeverity[] = ['INFO', 'WARNING', 'CRITICAL'];
 const eventStatuses: EcacNotificationEventStatus[] = [
   'PENDING',
+  'PROCESSING',
   'DELIVERED',
   'FAILED',
 ];

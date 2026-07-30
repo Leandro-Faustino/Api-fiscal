@@ -130,6 +130,7 @@ enum EcacNotificationChannel {
 
 enum EcacNotificationEventStatus {
   PENDING
+  PROCESSING
   DELIVERED
   FAILED
 }
@@ -656,6 +657,10 @@ model EcacAlertNotificationEvent {
   title        String
   dedupeKey    String                      @map("dedupe_key") @db.Char(64)
   scheduledAt  DateTime                    @map("scheduled_at")
+  attemptCount Int                         @default(0) @map("attempt_count")
+  maxAttempts  Int                         @default(3) @map("max_attempts")
+  processingStartedAt DateTime?            @map("processing_started_at")
+  lastAttemptedAt DateTime?                @map("last_attempted_at")
   deliveredAt  DateTime?                   @map("delivered_at")
   failedAt     DateTime?                   @map("failed_at")
   failureCode  String?                     @map("failure_code")
@@ -668,6 +673,8 @@ model EcacAlertNotificationEvent {
   @@unique([tenantId, dedupeKey])
   @@unique([tenantId, id])
   @@index([tenantId, userId, status, scheduledAt])
+  @@index([status, scheduledAt])
+  @@index([status, processingStartedAt])
   @@index([tenantId, alertId])
   @@map("ecac_alert_notification_events")
 }

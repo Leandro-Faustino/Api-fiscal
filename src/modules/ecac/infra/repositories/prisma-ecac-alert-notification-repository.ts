@@ -1,6 +1,7 @@
 import {
   type EcacAlertNotificationEvent as PrismaEcacAlertNotificationEvent,
   type EcacAlertNotificationPreference as PrismaEcacAlertNotificationPreference,
+  Prisma,
   type PrismaClient,
 } from '@prisma/client';
 import { NotFoundError } from '../../../../shared/domain/app-error.js';
@@ -10,7 +11,9 @@ import type {
 } from '../../domain/ecac-radar.js';
 import type {
   EcacAlertNotificationRepository,
+  ClaimEcacNotificationEventsInput,
   ListEcacNotificationEventsFilter,
+  MarkEcacNotificationEventFailedInput,
   UpsertEcacNotificationPreferenceInput,
 } from '../../application/ports/ecac-alert-notification-repository.js';
 
@@ -50,6 +53,10 @@ function toEvent(
     severity: row.severity,
     title: row.title,
     scheduledAt: row.scheduledAt,
+    attemptCount: row.attemptCount,
+    maxAttempts: row.maxAttempts,
+    processingStartedAt: row.processingStartedAt,
+    lastAttemptedAt: row.lastAttemptedAt,
     deliveredAt: row.deliveredAt,
     failedAt: row.failedAt,
     failureCode: row.failureCode,
@@ -196,6 +203,137 @@ export class PrismaEcacAlertNotificationRepository
         },
       });
       return toEvent(delivered);
+    });
+  }
+
+  public async claimPendingEvents(
+    input: ClaimEcacNotificationEventsInput,
+  ): Promise<EcacAlertNotificationEvent[]> {
+    if (input.limit < 1) {
+      return [];
+    }
+    const limit = Math.min(Math.trunc(input.limit), 100);
+    return this.prisma.$transaction(async (transaction) => {
+      const claimed = await transaction.$queryRaw<{ id: string }[]>(Prisma.sql`
+        UPDATE "ecac_alert_notification_events"
+        SET
+          "status" = 'PROCESSING'::"EcacNotificationEventStatus",
+          "attempt_count" = "attempt_count" + 1,
+          "processing_started_at" = ${input.claimedAt},
+          "last_attempted_at" = ${input.claimedAt},
+          "updated_at" = ${input.claimedAt}
+        WHERE "id" IN (
+          SELECT "id"
+          FROM "ecac_alert_notification_events"
+          WHERE (
+            ("status" = 'PENDING'::"EcacNotificationEventStatus" AND "scheduled_at" <= ${input.claimedAt})
+            OR
+            ("status" = 'PROCESSING'::"EcacNotificationEventStatus" AND "processing_started_at" <= ${input.staleProcessingBefore})
+          )
+          ORDER BY "scheduled_at" ASC, "created_at" ASC
+          FOR UPDATE SKIP LOCKED
+          LIMIT ${limit}
+        )
+        RETURNING "id"
+      `);
+      if (claimed.length === 0) {
+        return [];
+      }
+      const rows = await transaction.ecacAlertNotificationEvent.findMany({
+        where: { id: { in: claimed.map((event) => event.id) } },
+        orderBy: [{ scheduledAt: 'asc' }, { createdAt: 'asc' }],
+      });
+      return rows.map(toEvent);
+    });
+  }
+
+  public async markEventDeliveredByWorker(
+    tenantId: string,
+    eventId: string,
+    deliveredAt: Date,
+  ): Promise<EcacAlertNotificationEvent | null> {
+    const row = await this.prisma.ecacAlertNotificationEvent.findUnique({
+      where: { tenantId_id: { tenantId, id: eventId } },
+    });
+    if (!row) {
+      return null;
+    }
+    if (row.status === 'DELIVERED') {
+      return toEvent(row);
+    }
+    return this.prisma.$transaction(async (transaction) => {
+      const delivered = await transaction.ecacAlertNotificationEvent.update({
+        where: { tenantId_id: { tenantId, id: eventId } },
+        data: {
+          status: 'DELIVERED',
+          deliveredAt,
+          failedAt: null,
+          failureCode: null,
+          processingStartedAt: null,
+        },
+      });
+      await transaction.auditLog.create({
+        data: {
+          tenantId,
+          actorId: null,
+          action: 'ecac.notification_event.worker_delivered',
+          entityType: 'ecac_alert_notification_event',
+          entityId: eventId,
+          metadata: {
+            alertId: delivered.alertId,
+            channel: delivered.channel,
+            changeType: delivered.changeType,
+          },
+        },
+      });
+      return toEvent(delivered);
+    });
+  }
+
+  public async markEventFailedByWorker(
+    input: MarkEcacNotificationEventFailedInput,
+  ): Promise<EcacAlertNotificationEvent | null> {
+    const row = await this.prisma.ecacAlertNotificationEvent.findUnique({
+      where: {
+        tenantId_id: { tenantId: input.tenantId, id: input.eventId },
+      },
+    });
+    if (!row) {
+      return null;
+    }
+    const retryAt = input.retryAt ?? null;
+    return this.prisma.$transaction(async (transaction) => {
+      const failed = await transaction.ecacAlertNotificationEvent.update({
+        where: {
+          tenantId_id: { tenantId: input.tenantId, id: input.eventId },
+        },
+        data: {
+          status: retryAt ? 'PENDING' : 'FAILED',
+          scheduledAt: retryAt ?? row.scheduledAt,
+          failedAt: input.failedAt,
+          failureCode: input.failureCode,
+          processingStartedAt: null,
+        },
+      });
+      await transaction.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorId: null,
+          action: retryAt
+            ? 'ecac.notification_event.worker_retry_scheduled'
+            : 'ecac.notification_event.worker_failed',
+          entityType: 'ecac_alert_notification_event',
+          entityId: input.eventId,
+          metadata: {
+            alertId: failed.alertId,
+            channel: failed.channel,
+            changeType: failed.changeType,
+            failureCode: input.failureCode,
+            retryAt: retryAt?.toISOString() ?? null,
+          },
+        },
+      });
+      return toEvent(failed);
     });
   }
 }

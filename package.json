@@ -10,9 +10,11 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:ecac-worker": "tsx watch src/ecac-worker.ts",
+    "dev:ecac-notification-worker": "tsx watch src/ecac-notification-worker.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
     "start:ecac-worker": "node dist/src/ecac-worker.js",
+    "start:ecac-notification-worker": "node dist/src/ecac-notification-worker.js",
     "lint": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",

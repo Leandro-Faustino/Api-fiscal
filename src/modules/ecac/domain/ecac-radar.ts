@@ -24,7 +24,11 @@ export type EcacAlertChangeType = 'NEW' | 'CHANGED' | 'REOPENED' | 'RESOLVED';
 
 export type EcacNotificationChannel = 'IN_APP' | 'EMAIL';
 
-export type EcacNotificationEventStatus = 'PENDING' | 'DELIVERED' | 'FAILED';
+export type EcacNotificationEventStatus =
+  | 'PENDING'
+  | 'PROCESSING'
+  | 'DELIVERED'
+  | 'FAILED';
 
 export interface EcacFinding {
   id: string;
@@ -89,6 +93,10 @@ export interface EcacAlertNotificationEvent {
   severity: EcacFindingSeverity;
   title: string;
   scheduledAt: Date;
+  attemptCount: number;
+  maxAttempts: number;
+  processingStartedAt: Date | null;
+  lastAttemptedAt: Date | null;
   deliveredAt: Date | null;
   failedAt: Date | null;
   failureCode: string | null;
