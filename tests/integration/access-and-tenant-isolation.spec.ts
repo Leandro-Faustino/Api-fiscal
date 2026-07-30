@@ -889,7 +889,7 @@ describe('autenticação e isolamento multiempresa', () => {
         status: 'PENDING',
         changeType: 'NEW',
         severity: 'CRITICAL',
-        title: 'Débito identificado',
+        title: 'Débito pendente',
       }),
     ]);
     const firstEventId = firstEvents.json<Array<{ id: string }>>()[0]!.id;
