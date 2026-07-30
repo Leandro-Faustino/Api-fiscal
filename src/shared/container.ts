@@ -81,6 +81,7 @@ import {
   ListEcacNotificationEventsUseCase,
   ListEcacNotificationPreferencesUseCase,
   MarkEcacNotificationEventDeliveredUseCase,
+  RetryEcacNotificationEventUseCase,
   SummarizeEcacNotificationEventsUseCase,
   UpdateEcacNotificationPreferenceUseCase,
 } from '../modules/ecac/application/use-cases/manage-ecac-alert-notifications.js';
@@ -198,6 +199,7 @@ export interface Cradle {
   getEcacNotificationEventUseCase: GetEcacNotificationEventUseCase;
   summarizeEcacNotificationEventsUseCase: SummarizeEcacNotificationEventsUseCase;
   markEcacNotificationEventDeliveredUseCase: MarkEcacNotificationEventDeliveredUseCase;
+  retryEcacNotificationEventUseCase: RetryEcacNotificationEventUseCase;
 }
 
 export function createApplicationContainer(env: Env, prismaClient: PrismaClient): AwilixContainer<Cradle> {
@@ -342,6 +344,9 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     ).singleton(),
     markEcacNotificationEventDeliveredUseCase: asClass(
       MarkEcacNotificationEventDeliveredUseCase,
+    ).singleton(),
+    retryEcacNotificationEventUseCase: asClass(
+      RetryEcacNotificationEventUseCase,
     ).singleton(),
   });
 

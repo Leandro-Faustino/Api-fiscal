@@ -1,4 +1,5 @@
 import {
+  ConflictError,
   NotFoundError,
   ValidationError,
 } from '../../../../shared/domain/app-error.js';
@@ -260,5 +261,34 @@ export class MarkEcacNotificationEventDeliveredUseCase {
       );
     }
     return event;
+  }
+}
+
+export class RetryEcacNotificationEventUseCase {
+  private readonly repository: EcacAlertNotificationRepository;
+
+  public constructor({ ecacAlertNotificationRepository }: Dependencies) {
+    this.repository = ecacAlertNotificationRepository;
+  }
+
+  public async execute(
+    tenantId: string,
+    userId: string,
+    eventId: string,
+  ): Promise<EcacAlertNotificationEvent> {
+    const event = await this.repository.getEvent(tenantId, userId, eventId);
+    if (!event) {
+      throw new NotFoundError(
+        'Evento de notificação e-CAC não encontrado.',
+        'ECAC_NOTIFICATION_EVENT_NOT_FOUND',
+      );
+    }
+    if (event.status !== 'FAILED') {
+      throw new ConflictError(
+        'Somente eventos de notificação e-CAC com falha podem ser reagendados.',
+        'ECAC_NOTIFICATION_EVENT_NOT_FAILED',
+      );
+    }
+    return this.repository.retryFailedEvent(tenantId, userId, eventId, new Date());
   }
 }

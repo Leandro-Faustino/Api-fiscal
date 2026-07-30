@@ -969,6 +969,59 @@ describe('autenticação e isolamento multiempresa', () => {
       lastFailedAt: null,
       lastFailureCode: null,
     });
+    const failedAt = new Date();
+    await prisma.ecacAlertNotificationEvent.update({
+      where: {
+        tenantId_id: {
+          tenantId: tenantA.session.tenantId,
+          id: firstEventId,
+        },
+      },
+      data: {
+        status: 'FAILED',
+        deliveredAt: null,
+        failedAt,
+        failureCode: 'HTTP_503',
+      },
+    });
+    const retryEvent = await app.inject({
+      method: 'POST',
+      url: `/v1/control/ecac/notification-events/${firstEventId}/retry`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(retryEvent.statusCode).toBe(200);
+    expect(retryEvent.json()).toMatchObject({
+      id: firstEventId,
+      status: 'PENDING',
+      attemptCount: 1,
+      failedAt: null,
+      failureCode: null,
+    });
+    const retriedEvent = await prisma.ecacAlertNotificationEvent.findUniqueOrThrow({
+      where: {
+        tenantId_id: {
+          tenantId: tenantA.session.tenantId,
+          id: firstEventId,
+        },
+      },
+    });
+    expect(retriedEvent).toMatchObject({
+      status: 'PENDING',
+      attemptCount: 1,
+      processingStartedAt: null,
+      deliveredAt: null,
+      failedAt: null,
+      failureCode: null,
+    });
+    expect(retriedEvent.scheduledAt.getTime()).toBeGreaterThanOrEqual(
+      failedAt.getTime(),
+    );
+    const retryAgain = await app.inject({
+      method: 'POST',
+      url: `/v1/control/ecac/notification-events/${firstEventId}/retry`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(retryAgain.statusCode).toBe(409);
 
     const acknowledged = await app.inject({
       method: 'POST',
@@ -1044,15 +1097,17 @@ describe('autenticação e isolamento multiempresa', () => {
       url: '/v1/control/ecac/notification-events?status=PENDING',
       headers: { authorization: `Bearer ${tenantA.accessToken}` },
     });
-    expect(changedEvents.json()).toEqual([
-      expect.objectContaining({
-        alertId,
-        channel: 'IN_APP',
-        status: 'PENDING',
-        changeType: 'CHANGED',
-        severity: 'WARNING',
-      }),
-    ]);
+    expect(changedEvents.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          alertId,
+          channel: 'IN_APP',
+          status: 'PENDING',
+          changeType: 'CHANGED',
+          severity: 'WARNING',
+        }),
+      ]),
+    );
 
     findingMode = 'EMPTY';
     await observeAgain('integration-radar-003');

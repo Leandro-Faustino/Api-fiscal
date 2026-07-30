@@ -71,6 +71,12 @@ export interface EcacAlertNotificationRepository {
     eventId: string,
     deliveredAt: Date,
   ): Promise<EcacAlertNotificationEvent>;
+  retryFailedEvent(
+    tenantId: string,
+    userId: string,
+    eventId: string,
+    scheduledAt: Date,
+  ): Promise<EcacAlertNotificationEvent>;
   claimPendingEvents(
     input: ClaimEcacNotificationEventsInput,
   ): Promise<EcacAlertNotificationEvent[]>;
