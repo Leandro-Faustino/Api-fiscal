@@ -83,7 +83,10 @@ import {
   UpdateEcacNotificationPreferenceUseCase,
 } from '../modules/ecac/application/use-cases/manage-ecac-alert-notifications.js';
 import { RequestEcacSyncUseCase } from '../modules/ecac/application/use-cases/request-ecac-sync.js';
-import { InternalEcacNotificationDeliveryGateway } from '../modules/ecac/infra/gateways/internal-ecac-notification-delivery-gateway.js';
+import {
+  type EcacEmailTransport,
+  HttpEcacNotificationDeliveryGateway,
+} from '../modules/ecac/infra/gateways/http-ecac-notification-delivery-gateway.js';
 import { PrismaEcacAlertNotificationRepository } from '../modules/ecac/infra/repositories/prisma-ecac-alert-notification-repository.js';
 import { PrismaEcacRadarRepository } from '../modules/ecac/infra/repositories/prisma-ecac-radar-repository.js';
 import type { SerproConnectionRepository } from '../modules/ecac/application/ports/serpro-connection-repository.js';
@@ -179,6 +182,13 @@ export interface Cradle {
   ecacAlertNotificationRepository: EcacAlertNotificationRepository;
   ecacNotificationDeliveryGateway: EcacNotificationDeliveryGateway;
   ecacNotificationRetryDelayMs: number;
+  ecacEmailProvider: 'disabled' | 'http';
+  ecacEmailHttpUrl: string;
+  ecacEmailHttpAuthorization: string;
+  ecacEmailFrom: string;
+  ecacEmailSubjectPrefix: string;
+  ecacEmailTimeoutMs: number;
+  ecacEmailTransport: EcacEmailTransport | null;
   processEcacNotificationEventsUseCase: ProcessEcacNotificationEventsUseCase;
   listEcacNotificationPreferencesUseCase: ListEcacNotificationPreferencesUseCase;
   updateEcacNotificationPreferenceUseCase: UpdateEcacNotificationPreferenceUseCase;
@@ -288,8 +298,15 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     ecacAlertNotificationRepository: asClass(
       PrismaEcacAlertNotificationRepository,
     ).singleton(),
+    ecacEmailProvider: asValue(env.ECAC_EMAIL_PROVIDER),
+    ecacEmailHttpUrl: asValue(env.ECAC_EMAIL_HTTP_URL),
+    ecacEmailHttpAuthorization: asValue(env.ECAC_EMAIL_HTTP_AUTHORIZATION),
+    ecacEmailFrom: asValue(env.ECAC_EMAIL_FROM),
+    ecacEmailSubjectPrefix: asValue(env.ECAC_EMAIL_SUBJECT_PREFIX),
+    ecacEmailTimeoutMs: asValue(env.ECAC_EMAIL_TIMEOUT_MS),
+    ecacEmailTransport: asValue(null),
     ecacNotificationDeliveryGateway: asClass(
-      InternalEcacNotificationDeliveryGateway,
+      HttpEcacNotificationDeliveryGateway,
     ).singleton(),
     ecacNotificationRetryDelayMs: asValue(env.ECAC_NOTIFICATION_RETRY_DELAY_MS),
     processEcacNotificationEventsUseCase: asClass(
