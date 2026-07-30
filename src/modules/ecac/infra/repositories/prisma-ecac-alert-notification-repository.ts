@@ -8,6 +8,7 @@ import { NotFoundError } from '../../../../shared/domain/app-error.js';
 import type {
   EcacAlertNotificationEvent,
   EcacAlertNotificationPreference,
+  EcacNotificationEventSummary,
 } from '../../domain/ecac-radar.js';
 import type {
   EcacAlertNotificationRepository,
@@ -62,6 +63,26 @@ function toEvent(
     failureCode: row.failureCode,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+function emptySummary(): EcacNotificationEventSummary {
+  return {
+    total: 0,
+    byStatus: {
+      PENDING: 0,
+      PROCESSING: 0,
+      DELIVERED: 0,
+      FAILED: 0,
+    },
+    byChannel: {
+      IN_APP: 0,
+      EMAIL: 0,
+    },
+    nextPendingAt: null,
+    lastDeliveredAt: null,
+    lastFailedAt: null,
+    lastFailureCode: null,
   };
 }
 
@@ -158,6 +179,58 @@ export class PrismaEcacAlertNotificationRepository
       take: 200,
     });
     return rows.map(toEvent);
+  }
+
+  public async summarizeEvents(
+    tenantId: string,
+    userId: string,
+  ): Promise<EcacNotificationEventSummary> {
+    const [
+      statusRows,
+      channelRows,
+      nextPending,
+      lastDelivered,
+      lastFailed,
+    ] = await Promise.all([
+      this.prisma.ecacAlertNotificationEvent.groupBy({
+        by: ['status'],
+        where: { tenantId, userId },
+        _count: { id: true },
+      }),
+      this.prisma.ecacAlertNotificationEvent.groupBy({
+        by: ['channel'],
+        where: { tenantId, userId },
+        _count: { id: true },
+      }),
+      this.prisma.ecacAlertNotificationEvent.findFirst({
+        where: { tenantId, userId, status: 'PENDING' },
+        orderBy: [{ scheduledAt: 'asc' }, { createdAt: 'asc' }],
+        select: { scheduledAt: true },
+      }),
+      this.prisma.ecacAlertNotificationEvent.findFirst({
+        where: { tenantId, userId, status: 'DELIVERED', deliveredAt: { not: null } },
+        orderBy: [{ deliveredAt: 'desc' }, { updatedAt: 'desc' }],
+        select: { deliveredAt: true },
+      }),
+      this.prisma.ecacAlertNotificationEvent.findFirst({
+        where: { tenantId, userId, status: 'FAILED', failedAt: { not: null } },
+        orderBy: [{ failedAt: 'desc' }, { updatedAt: 'desc' }],
+        select: { failedAt: true, failureCode: true },
+      }),
+    ]);
+    const summary = emptySummary();
+    for (const row of statusRows) {
+      summary.byStatus[row.status] = row._count.id;
+      summary.total += row._count.id;
+    }
+    for (const row of channelRows) {
+      summary.byChannel[row.channel] = row._count.id;
+    }
+    summary.nextPendingAt = nextPending?.scheduledAt ?? null;
+    summary.lastDeliveredAt = lastDelivered?.deliveredAt ?? null;
+    summary.lastFailedAt = lastFailed?.failedAt ?? null;
+    summary.lastFailureCode = lastFailed?.failureCode ?? null;
+    return summary;
   }
 
   public async markEventDelivered(

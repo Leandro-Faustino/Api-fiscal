@@ -3,6 +3,7 @@ import type {
   EcacAlertNotificationPreference,
   EcacFindingSeverity,
   EcacNotificationChannel,
+  EcacNotificationEventSummary,
   EcacNotificationEventStatus,
 } from '../../domain/ecac-radar.js';
 
@@ -48,6 +49,10 @@ export interface EcacAlertNotificationRepository {
     userId: string,
     filter?: ListEcacNotificationEventsFilter,
   ): Promise<EcacAlertNotificationEvent[]>;
+  summarizeEvents(
+    tenantId: string,
+    userId: string,
+  ): Promise<EcacNotificationEventSummary>;
   markEventDelivered(
     tenantId: string,
     userId: string,

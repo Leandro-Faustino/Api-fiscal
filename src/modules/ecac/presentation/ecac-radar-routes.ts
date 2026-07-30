@@ -179,6 +179,47 @@ const notificationEventSchema = {
   },
 } as const;
 
+const notificationEventSummarySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'total',
+    'byStatus',
+    'byChannel',
+    'nextPendingAt',
+    'lastDeliveredAt',
+    'lastFailedAt',
+    'lastFailureCode',
+  ],
+  properties: {
+    total: { type: 'integer', minimum: 0 },
+    byStatus: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['PENDING', 'PROCESSING', 'DELIVERED', 'FAILED'],
+      properties: {
+        PENDING: { type: 'integer', minimum: 0 },
+        PROCESSING: { type: 'integer', minimum: 0 },
+        DELIVERED: { type: 'integer', minimum: 0 },
+        FAILED: { type: 'integer', minimum: 0 },
+      },
+    },
+    byChannel: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['IN_APP', 'EMAIL'],
+      properties: {
+        IN_APP: { type: 'integer', minimum: 0 },
+        EMAIL: { type: 'integer', minimum: 0 },
+      },
+    },
+    nextPendingAt: { type: ['string', 'null'], format: 'date-time' },
+    lastDeliveredAt: { type: ['string', 'null'], format: 'date-time' },
+    lastFailedAt: { type: ['string', 'null'], format: 'date-time' },
+    lastFailureCode: { type: ['string', 'null'] },
+  },
+} as const;
+
 const jobSchema = {
   type: 'object',
   additionalProperties: false,
@@ -672,6 +713,26 @@ export async function ecacRadarRoutes(
         context.tenantId,
         context.userId,
         request.query,
+      );
+    },
+  );
+
+  app.get(
+    '/v1/control/ecac/notification-events/summary',
+    {
+      preHandler: [authenticate, authorize('ecac:read')],
+      schema: {
+        security: [{ bearerAuth: [] }],
+        tags: ['Control - Radar e-CAC'],
+        summary: 'Resumir entregas de notificação e-CAC do usuário autenticado',
+        response: { 200: notificationEventSummarySchema },
+      },
+    },
+    async (request) => {
+      const context = request.authContext!;
+      return cradle.summarizeEcacNotificationEventsUseCase.execute(
+        context.tenantId,
+        context.userId,
       );
     },
   );

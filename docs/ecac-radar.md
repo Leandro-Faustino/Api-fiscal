@@ -46,7 +46,10 @@ suporta `IN_APP` e `EMAIL`, severidade mínima e inclusão opcional de eventos
 `ecac_alert_notification_events` para usuários ativos cujas preferências aceitam
 aquele tipo de mudança. A API lista a caixa de saída do usuário em
 `GET /v1/control/ecac/notification-events` e permite marcar a entrega interna em
-`POST /v1/control/ecac/notification-events/:eventId/deliver`.
+`POST /v1/control/ecac/notification-events/:eventId/deliver`. Para painéis e
+suporte operacional, `GET /v1/control/ecac/notification-events/summary` resume
+os eventos do usuário por status e canal, incluindo próxima pendência, última
+entrega e última falha.
 
 O worker de notificações processa essa caixa de saída em um processo separado.
 Eventos `IN_APP` são entregues internamente. Eventos `EMAIL` chamam uma API HTTP

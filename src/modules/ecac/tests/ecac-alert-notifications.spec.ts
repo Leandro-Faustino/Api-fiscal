@@ -4,6 +4,7 @@ import {
   ListEcacNotificationEventsUseCase,
   ListEcacNotificationPreferencesUseCase,
   MarkEcacNotificationEventDeliveredUseCase,
+  SummarizeEcacNotificationEventsUseCase,
   UpdateEcacNotificationPreferenceUseCase,
 } from '../application/use-cases/manage-ecac-alert-notifications.js';
 
@@ -29,6 +30,23 @@ function repository(
       updatedAt: input.updatedAt,
     })),
     listEvents: vi.fn(async () => []),
+    summarizeEvents: vi.fn(async () => ({
+      total: 0,
+      byStatus: {
+        PENDING: 0,
+        PROCESSING: 0,
+        DELIVERED: 0,
+        FAILED: 0,
+      },
+      byChannel: {
+        IN_APP: 0,
+        EMAIL: 0,
+      },
+      nextPendingAt: null,
+      lastDeliveredAt: null,
+      lastFailedAt: null,
+      lastFailureCode: null,
+    })),
     markEventDelivered: vi.fn(async (tenant, user, event, deliveredAt) => ({
       id: event,
       tenantId: tenant,
@@ -111,6 +129,36 @@ describe('notificações de alertas e-CAC', () => {
       useCase.execute(tenantId, userId, { status: 'OPEN' as never }),
     ).toThrowError('Status de evento de notificação inválido.');
     expect(listEvents).not.toHaveBeenCalled();
+  });
+
+  it('resume eventos do usuário autenticado', async () => {
+    const summarizeEvents = vi.fn(async () => ({
+      total: 2,
+      byStatus: {
+        PENDING: 1,
+        PROCESSING: 0,
+        DELIVERED: 1,
+        FAILED: 0,
+      },
+      byChannel: {
+        IN_APP: 1,
+        EMAIL: 1,
+      },
+      nextPendingAt: now,
+      lastDeliveredAt: now,
+      lastFailedAt: null,
+      lastFailureCode: null,
+    }));
+    const useCase = new SummarizeEcacNotificationEventsUseCase({
+      ecacAlertNotificationRepository: repository({ summarizeEvents }),
+    });
+
+    await expect(useCase.execute(tenantId, userId)).resolves.toMatchObject({
+      total: 2,
+      byStatus: { PENDING: 1, DELIVERED: 1 },
+      byChannel: { IN_APP: 1, EMAIL: 1 },
+    });
+    expect(summarizeEvents).toHaveBeenCalledWith(tenantId, userId);
   });
 
   it('marca evento do próprio usuário como entregue', async () => {

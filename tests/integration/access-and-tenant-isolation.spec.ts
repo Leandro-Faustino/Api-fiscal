@@ -930,6 +930,29 @@ describe('autenticação e isolamento multiempresa', () => {
       processingStartedAt: null,
       deliveredAt: expect.any(Date),
     });
+    const deliveredSummary = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/notification-events/summary',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(deliveredSummary.statusCode).toBe(200);
+    expect(deliveredSummary.json()).toMatchObject({
+      total: 1,
+      byStatus: {
+        PENDING: 0,
+        PROCESSING: 0,
+        DELIVERED: 1,
+        FAILED: 0,
+      },
+      byChannel: {
+        IN_APP: 1,
+        EMAIL: 0,
+      },
+      nextPendingAt: null,
+      lastDeliveredAt: expect.any(String),
+      lastFailedAt: null,
+      lastFailureCode: null,
+    });
 
     const acknowledged = await app.inject({
       method: 'POST',
@@ -1068,10 +1091,32 @@ describe('autenticação e isolamento multiempresa', () => {
       url: '/v1/control/ecac/notification-events',
       headers: { authorization: `Bearer ${tenantB.accessToken}` },
     });
+    const otherTenantEventSummary = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/notification-events/summary',
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
     expect(crossTenantRead.statusCode).toBe(404);
     expect(otherTenantFindings.json()).toEqual([]);
     expect(otherTenantAlerts.json()).toEqual([]);
     expect(otherTenantEvents.json()).toEqual([]);
+    expect(otherTenantEventSummary.json()).toEqual({
+      total: 0,
+      byStatus: {
+        PENDING: 0,
+        PROCESSING: 0,
+        DELIVERED: 0,
+        FAILED: 0,
+      },
+      byChannel: {
+        IN_APP: 0,
+        EMAIL: 0,
+      },
+      nextPendingAt: null,
+      lastDeliveredAt: null,
+      lastFailedAt: null,
+      lastFailureCode: null,
+    });
 
     await app.close();
   });
