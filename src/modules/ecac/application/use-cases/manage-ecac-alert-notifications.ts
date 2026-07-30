@@ -257,6 +257,34 @@ export class ListEcacNotificationEventAuditUseCase {
   }
 }
 
+export class AcknowledgeEcacNotificationEventUseCase {
+  private readonly repository: EcacAlertNotificationRepository;
+
+  public constructor({ ecacAlertNotificationRepository }: Dependencies) {
+    this.repository = ecacAlertNotificationRepository;
+  }
+
+  public async execute(
+    tenantId: string,
+    userId: string,
+    eventId: string,
+  ): Promise<EcacNotificationEventAuditEntry> {
+    const event = await this.repository.getEvent(tenantId, userId, eventId);
+    if (!event) {
+      throw new NotFoundError(
+        'Evento de notificação e-CAC não encontrado.',
+        'ECAC_NOTIFICATION_EVENT_NOT_FOUND',
+      );
+    }
+    return this.repository.acknowledgeEvent(
+      tenantId,
+      userId,
+      eventId,
+      new Date(),
+    );
+  }
+}
+
 export class SummarizeEcacNotificationEventsUseCase {
   private readonly repository: EcacAlertNotificationRepository;
 

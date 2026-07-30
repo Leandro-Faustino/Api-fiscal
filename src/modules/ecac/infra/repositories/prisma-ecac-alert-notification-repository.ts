@@ -241,6 +241,55 @@ export class PrismaEcacAlertNotificationRepository
     return rows.map(toAuditEntry);
   }
 
+  public async acknowledgeEvent(
+    tenantId: string,
+    userId: string,
+    eventId: string,
+    acknowledgedAt: Date,
+  ): Promise<EcacNotificationEventAuditEntry> {
+    const row = await this.prisma.ecacAlertNotificationEvent.findUnique({
+      where: { tenantId_id: { tenantId, id: eventId } },
+    });
+    if (!row || row.userId !== userId) {
+      throw new NotFoundError(
+        'Evento de notificação e-CAC não encontrado.',
+        'ECAC_NOTIFICATION_EVENT_NOT_FOUND',
+      );
+    }
+    return this.prisma.$transaction(async (transaction) => {
+      const existing = await transaction.auditLog.findFirst({
+        where: {
+          tenantId,
+          actorId: userId,
+          action: 'ecac.notification_event.acknowledged',
+          entityType: 'ecac_alert_notification_event',
+          entityId: eventId,
+        },
+        orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+      });
+      if (existing) {
+        return toAuditEntry(existing);
+      }
+      const acknowledged = await transaction.auditLog.create({
+        data: {
+          tenantId,
+          actorId: userId,
+          action: 'ecac.notification_event.acknowledged',
+          entityType: 'ecac_alert_notification_event',
+          entityId: eventId,
+          occurredAt: acknowledgedAt,
+          metadata: {
+            alertId: row.alertId,
+            channel: row.channel,
+            changeType: row.changeType,
+            status: row.status,
+          },
+        },
+      });
+      return toAuditEntry(acknowledged);
+    });
+  }
+
   public async summarizeEvents(
     tenantId: string,
     userId: string,

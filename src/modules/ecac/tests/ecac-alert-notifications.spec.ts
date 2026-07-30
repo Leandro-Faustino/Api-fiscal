@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EcacAlertNotificationRepository } from '../application/ports/ecac-alert-notification-repository.js';
 import {
+  AcknowledgeEcacNotificationEventUseCase,
   GetEcacNotificationEventUseCase,
   ListEcacNotificationEventAuditUseCase,
   ListEcacNotificationEventsUseCase,
@@ -68,6 +69,18 @@ function repository(
         occurredAt: now,
       },
     ]),
+    acknowledgeEvent: vi.fn(async (tenant, user, event, acknowledgedAt) => ({
+      id: '10000000-0000-4000-8000-000000000008',
+      tenantId: tenant,
+      actorId: user,
+      action: 'ecac.notification_event.acknowledged',
+      entityType: 'ecac_alert_notification_event',
+      entityId: event,
+      metadata: {
+        status: 'DELIVERED',
+      },
+      occurredAt: acknowledgedAt,
+    })),
     summarizeEvents: vi.fn(async () => ({
       total: 0,
       byStatus: {
@@ -346,6 +359,48 @@ describe('notificações de alertas e-CAC', () => {
     ).rejects.toThrowError('A auditoria do evento deve ter limite entre 1 e 100.');
     expect(getEvent).not.toHaveBeenCalled();
     expect(listEventAuditTrail).not.toHaveBeenCalled();
+  });
+
+  it('registra tratamento operacional de evento do próprio usuário', async () => {
+    const getEvent = vi.fn(repository().getEvent);
+    const acknowledgeEvent = vi.fn(repository().acknowledgeEvent);
+    const useCase = new AcknowledgeEcacNotificationEventUseCase({
+      ecacAlertNotificationRepository: repository({
+        getEvent,
+        acknowledgeEvent,
+      }),
+    });
+
+    await expect(useCase.execute(tenantId, userId, eventId)).resolves.toMatchObject({
+      actorId: userId,
+      action: 'ecac.notification_event.acknowledged',
+      entityId: eventId,
+    });
+    expect(getEvent).toHaveBeenCalledWith(tenantId, userId, eventId);
+    expect(acknowledgeEvent).toHaveBeenCalledWith(
+      tenantId,
+      userId,
+      eventId,
+      expect.any(Date),
+    );
+  });
+
+  it('não registra tratamento de evento de outro usuário', async () => {
+    const getEvent = vi.fn(async () => null);
+    const acknowledgeEvent = vi.fn();
+    const useCase = new AcknowledgeEcacNotificationEventUseCase({
+      ecacAlertNotificationRepository: repository({
+        getEvent,
+        acknowledgeEvent,
+      }),
+    });
+
+    await expect(
+      useCase.execute(tenantId, userId, eventId),
+    ).rejects.toMatchObject({
+      code: 'ECAC_NOTIFICATION_EVENT_NOT_FOUND',
+    });
+    expect(acknowledgeEvent).not.toHaveBeenCalled();
   });
 
   it('resume eventos do usuário autenticado', async () => {
