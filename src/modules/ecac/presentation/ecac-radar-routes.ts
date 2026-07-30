@@ -179,6 +179,31 @@ const notificationEventSchema = {
   },
 } as const;
 
+const notificationEventAuditEntrySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'tenantId',
+    'actorId',
+    'action',
+    'entityType',
+    'entityId',
+    'metadata',
+    'occurredAt',
+  ],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    tenantId: { type: 'string', format: 'uuid' },
+    actorId: { type: ['string', 'null'], format: 'uuid' },
+    action: { type: 'string' },
+    entityType: { type: 'string' },
+    entityId: { type: 'string', format: 'uuid' },
+    metadata: { type: ['object', 'array', 'string', 'number', 'boolean', 'null'] },
+    occurredAt: { type: 'string', format: 'date-time' },
+  },
+} as const;
+
 const notificationEventSummarySchema = {
   type: 'object',
   additionalProperties: false,
@@ -367,6 +392,10 @@ interface NotificationEventQuery {
   severity?: EcacFindingSeverity;
   scheduledFrom?: string;
   scheduledTo?: string;
+  limit?: number;
+}
+
+interface NotificationEventAuditQuery {
   limit?: number;
 }
 
@@ -778,6 +807,46 @@ export async function ecacRadarRoutes(
         context.tenantId,
         context.userId,
         request.params.eventId,
+      );
+    },
+  );
+
+  app.get<{
+    Params: NotificationEventParams;
+    Querystring: NotificationEventAuditQuery;
+  }>(
+    '/v1/control/ecac/notification-events/:eventId/audit',
+    {
+      preHandler: [authenticate, authorize('ecac:read')],
+      schema: {
+        security: [{ bearerAuth: [] }],
+        tags: ['Control - Radar e-CAC'],
+        summary: 'Listar auditoria de um evento de notificação e-CAC',
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['eventId'],
+          properties: { eventId: { type: 'string', format: 'uuid' } },
+        },
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+          },
+        },
+        response: {
+          200: { type: 'array', items: notificationEventAuditEntrySchema },
+        },
+      },
+    },
+    async (request) => {
+      const context = request.authContext!;
+      return cradle.listEcacNotificationEventAuditUseCase.execute(
+        context.tenantId,
+        context.userId,
+        request.params.eventId,
+        request.query.limit,
       );
     },
   );

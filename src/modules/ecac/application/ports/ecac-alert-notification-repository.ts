@@ -3,6 +3,7 @@ import type {
   EcacAlertNotificationPreference,
   EcacFindingSeverity,
   EcacNotificationChannel,
+  EcacNotificationEventAuditEntry,
   EcacNotificationEventSummary,
   EcacNotificationEventStatus,
   EcacQueryType,
@@ -61,6 +62,11 @@ export interface EcacAlertNotificationRepository {
     userId: string,
     eventId: string,
   ): Promise<EcacAlertNotificationEvent | null>;
+  listEventAuditTrail(
+    tenantId: string,
+    eventId: string,
+    limit: number,
+  ): Promise<EcacNotificationEventAuditEntry[]>;
   summarizeEvents(
     tenantId: string,
     userId: string,
