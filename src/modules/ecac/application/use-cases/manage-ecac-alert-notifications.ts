@@ -7,6 +7,7 @@ import type {
   EcacAlertNotificationPreference,
   EcacFindingSeverity,
   EcacNotificationChannel,
+  EcacNotificationEventSummary,
   EcacNotificationEventStatus,
 } from '../../domain/ecac-radar.js';
 import type {
@@ -107,6 +108,21 @@ export class ListEcacNotificationEventsUseCase {
       ensureStatus(filter.status);
     }
     return this.repository.listEvents(tenantId, userId, filter);
+  }
+}
+
+export class SummarizeEcacNotificationEventsUseCase {
+  private readonly repository: EcacAlertNotificationRepository;
+
+  public constructor({ ecacAlertNotificationRepository }: Dependencies) {
+    this.repository = ecacAlertNotificationRepository;
+  }
+
+  public execute(
+    tenantId: string,
+    userId: string,
+  ): Promise<EcacNotificationEventSummary> {
+    return this.repository.summarizeEvents(tenantId, userId);
   }
 }
 

@@ -51,6 +51,23 @@ function repository(
       throw new Error('not implemented');
     }),
     listEvents: vi.fn(async () => []),
+    summarizeEvents: vi.fn(async () => ({
+      total: 0,
+      byStatus: {
+        PENDING: 0,
+        PROCESSING: 0,
+        DELIVERED: 0,
+        FAILED: 0,
+      },
+      byChannel: {
+        IN_APP: 0,
+        EMAIL: 0,
+      },
+      nextPendingAt: null,
+      lastDeliveredAt: null,
+      lastFailedAt: null,
+      lastFailureCode: null,
+    })),
     markEventDelivered: vi.fn(async () => {
       throw new Error('not implemented');
     }),

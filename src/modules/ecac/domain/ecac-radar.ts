@@ -104,6 +104,16 @@ export interface EcacAlertNotificationEvent {
   updatedAt: Date;
 }
 
+export interface EcacNotificationEventSummary {
+  total: number;
+  byStatus: Record<EcacNotificationEventStatus, number>;
+  byChannel: Record<EcacNotificationChannel, number>;
+  nextPendingAt: Date | null;
+  lastDeliveredAt: Date | null;
+  lastFailedAt: Date | null;
+  lastFailureCode: string | null;
+}
+
 export interface ComparableEcacFinding {
   code: string;
   category: string;
