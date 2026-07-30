@@ -12,6 +12,7 @@ import { createApplicationContainer } from '../../src/shared/container.js';
 import { generateTotpCode } from '../../src/modules/access/infra/security/totp-mfa-service.js';
 import { createTestPkcs12 } from '../../src/modules/credentials/tests/pkcs12-fixture.js';
 import type { EcacGateway } from '../../src/modules/ecac/application/ports/ecac-gateway.js';
+import { acquireEcacStreamLock } from '../../src/modules/ecac/infra/repositories/prisma-ecac-radar-repository.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -606,6 +607,12 @@ describe('autenticação e isolamento multiempresa', () => {
     expect(otherTenantAlerts.json()).toEqual([]);
 
     await app.close();
+  });
+
+  it('adquire o lock transacional do Radar sem retornar void ao Prisma', async () => {
+    await prisma.$transaction(async (transaction) => {
+      await acquireEcacStreamLock(transaction, 'integration:ecac-advisory-lock');
+    });
   });
 
   it('processa Radar e-CAC de forma idempotente e mantém lotes isolados', async () => {

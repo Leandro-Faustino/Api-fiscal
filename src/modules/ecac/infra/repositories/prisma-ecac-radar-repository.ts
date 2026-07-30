@@ -135,6 +135,22 @@ function serviceAllowsQuery(services: string[], queryType: EcacQueryType): boole
   );
 }
 
+export async function acquireEcacStreamLock(
+  transaction: Prisma.TransactionClient,
+  streamLock: string,
+): Promise<void> {
+  const rows = await transaction.$queryRaw<Array<{ lockAcquired: number }>>`
+    WITH acquired AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(hashtextextended(${streamLock}, 0))
+    )
+    SELECT 1::integer AS "lockAcquired"
+    FROM acquired
+  `;
+  if (rows[0]?.lockAcquired !== 1) {
+    throw new Error('Não foi possível adquirir o lock transacional do Radar e-CAC.');
+  }
+}
+
 export class PrismaEcacRadarRepository implements EcacRadarRepository {
   private readonly prisma: PrismaClient;
 
@@ -821,9 +837,7 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
       staleObservation: false,
     };
     const streamLock = `${job.tenantId}:${job.companyId}:${job.queryType}`;
-    await transaction.$queryRaw`
-      SELECT pg_advisory_xact_lock(hashtextextended(${streamLock}, 0))
-    `;
+    await acquireEcacStreamLock(transaction, streamLock);
 
     const cursor = await transaction.ecacObservationCursor.findUnique({
       where: {
