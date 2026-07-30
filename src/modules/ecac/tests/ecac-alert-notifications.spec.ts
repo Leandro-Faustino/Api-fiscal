@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EcacAlertNotificationRepository } from '../application/ports/ecac-alert-notification-repository.js';
 import {
+  GetEcacNotificationEventUseCase,
   ListEcacNotificationEventsUseCase,
   ListEcacNotificationPreferencesUseCase,
   MarkEcacNotificationEventDeliveredUseCase,
@@ -30,6 +31,29 @@ function repository(
       updatedAt: input.updatedAt,
     })),
     listEvents: vi.fn(async () => []),
+    getEvent: vi.fn(async (tenant, user, event) => ({
+      id: event,
+      tenantId: tenant,
+      alertId: '10000000-0000-4000-8000-000000000005',
+      userId: user,
+      companyId: '10000000-0000-4000-8000-000000000006',
+      queryType: 'TAX_STATUS' as const,
+      channel: 'IN_APP' as const,
+      status: 'PENDING' as const,
+      changeType: 'NEW' as const,
+      severity: 'CRITICAL' as const,
+      title: 'Débito identificado',
+      scheduledAt: now,
+      attemptCount: 0,
+      maxAttempts: 3,
+      processingStartedAt: null,
+      lastAttemptedAt: null,
+      deliveredAt: null,
+      failedAt: null,
+      failureCode: null,
+      createdAt: now,
+      updatedAt: now,
+    })),
     summarizeEvents: vi.fn(async () => ({
       total: 0,
       byStatus: {
@@ -201,6 +225,33 @@ describe('notificações de alertas e-CAC', () => {
       useCase.execute(tenantId, userId, { limit: 201 }),
     ).toThrowError('A listagem de eventos deve ter limite entre 1 e 200.');
     expect(listEvents).not.toHaveBeenCalled();
+  });
+
+  it('consulta detalhe de evento do próprio usuário', async () => {
+    const getEvent = vi.fn(repository().getEvent);
+    const useCase = new GetEcacNotificationEventUseCase({
+      ecacAlertNotificationRepository: repository({ getEvent }),
+    });
+
+    await expect(useCase.execute(tenantId, userId, eventId)).resolves.toMatchObject({
+      id: eventId,
+      tenantId,
+      userId,
+      status: 'PENDING',
+    });
+    expect(getEvent).toHaveBeenCalledWith(tenantId, userId, eventId);
+  });
+
+  it('retorna não encontrado quando detalhe de evento não pertence ao usuário', async () => {
+    const getEvent = vi.fn(async () => null);
+    const useCase = new GetEcacNotificationEventUseCase({
+      ecacAlertNotificationRepository: repository({ getEvent }),
+    });
+
+    await expect(useCase.execute(tenantId, userId, eventId)).rejects.toMatchObject({
+      code: 'ECAC_NOTIFICATION_EVENT_NOT_FOUND',
+    });
+    expect(getEvent).toHaveBeenCalledWith(tenantId, userId, eventId);
   });
 
   it('resume eventos do usuário autenticado', async () => {
