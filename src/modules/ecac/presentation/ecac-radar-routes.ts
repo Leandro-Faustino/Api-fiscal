@@ -362,6 +362,12 @@ interface NotificationPreferenceBody {
 interface NotificationEventQuery {
   channel?: EcacNotificationChannel;
   status?: EcacNotificationEventStatus;
+  companyId?: string;
+  queryType?: EcacQueryType;
+  severity?: EcacFindingSeverity;
+  scheduledFrom?: string;
+  scheduledTo?: string;
+  limit?: number;
 }
 
 interface NotificationEventParams {
@@ -702,6 +708,18 @@ export async function ecacRadarRoutes(
               type: 'string',
               enum: ['PENDING', 'PROCESSING', 'DELIVERED', 'FAILED'],
             },
+            companyId: { type: 'string', format: 'uuid' },
+            queryType: {
+              type: 'string',
+              enum: ['TAX_STATUS', 'DEBTS', 'MAILBOX'],
+            },
+            severity: {
+              type: 'string',
+              enum: ['INFO', 'WARNING', 'CRITICAL'],
+            },
+            scheduledFrom: { type: 'string', format: 'date-time' },
+            scheduledTo: { type: 'string', format: 'date-time' },
+            limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
           },
         },
         response: { 200: { type: 'array', items: notificationEventSchema } },

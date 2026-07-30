@@ -45,7 +45,9 @@ suporta `IN_APP` e `EMAIL`, severidade mínima e inclusão opcional de eventos
 `RESOLVED`. Quando um alerta muda, a mesma transação cria eventos deduplicados em
 `ecac_alert_notification_events` para usuários ativos cujas preferências aceitam
 aquele tipo de mudança. A API lista a caixa de saída do usuário em
-`GET /v1/control/ecac/notification-events` e permite marcar a entrega interna em
+`GET /v1/control/ecac/notification-events`, com filtros por canal, status,
+empresa, tipo de consulta, severidade, período de agendamento e limite de
+retorno. Também permite marcar a entrega interna em
 `POST /v1/control/ecac/notification-events/:eventId/deliver`. Para painéis e
 suporte operacional, `GET /v1/control/ecac/notification-events/summary` resume
 os eventos do usuário por status e canal, incluindo próxima pendência, última

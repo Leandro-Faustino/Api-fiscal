@@ -168,15 +168,26 @@ export class PrismaEcacAlertNotificationRepository
     userId: string,
     filter: ListEcacNotificationEventsFilter = {},
   ): Promise<EcacAlertNotificationEvent[]> {
+    const scheduledAt =
+      filter.scheduledFrom || filter.scheduledTo
+        ? {
+            ...(filter.scheduledFrom ? { gte: filter.scheduledFrom } : {}),
+            ...(filter.scheduledTo ? { lte: filter.scheduledTo } : {}),
+          }
+        : undefined;
     const rows = await this.prisma.ecacAlertNotificationEvent.findMany({
       where: {
         tenantId,
         userId,
         ...(filter.channel ? { channel: filter.channel } : {}),
         ...(filter.status ? { status: filter.status } : {}),
+        ...(filter.companyId ? { companyId: filter.companyId } : {}),
+        ...(filter.queryType ? { queryType: filter.queryType } : {}),
+        ...(filter.severity ? { severity: filter.severity } : {}),
+        ...(scheduledAt ? { scheduledAt } : {}),
       },
       orderBy: [{ scheduledAt: 'desc' }, { createdAt: 'desc' }],
-      take: 200,
+      take: filter.limit ?? 50,
     });
     return rows.map(toEvent);
   }

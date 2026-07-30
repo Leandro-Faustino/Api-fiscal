@@ -131,6 +131,78 @@ describe('notificações de alertas e-CAC', () => {
     expect(listEvents).not.toHaveBeenCalled();
   });
 
+  it('normaliza filtros operacionais antes de listar eventos', async () => {
+    const listEvents = vi.fn(async () => []);
+    const useCase = new ListEcacNotificationEventsUseCase({
+      ecacAlertNotificationRepository: repository({ listEvents }),
+    });
+    const scheduledFrom = '2026-07-26T00:00:00.000Z';
+    const scheduledTo = '2026-07-27T00:00:00.000Z';
+
+    await expect(
+      useCase.execute(tenantId, userId, {
+        channel: 'EMAIL',
+        status: 'FAILED',
+        companyId: '10000000-0000-4000-8000-000000000006',
+        queryType: 'MAILBOX',
+        severity: 'WARNING',
+        scheduledFrom,
+        scheduledTo,
+        limit: 25,
+      }),
+    ).resolves.toEqual([]);
+    expect(listEvents).toHaveBeenCalledWith(
+      tenantId,
+      userId,
+      expect.objectContaining({
+        channel: 'EMAIL',
+        status: 'FAILED',
+        companyId: '10000000-0000-4000-8000-000000000006',
+        queryType: 'MAILBOX',
+        severity: 'WARNING',
+        scheduledFrom: new Date(scheduledFrom),
+        scheduledTo: new Date(scheduledTo),
+        limit: 25,
+      }),
+    );
+  });
+
+  it('aplica limite padrão ao listar eventos', async () => {
+    const listEvents = vi.fn(async () => []);
+    const useCase = new ListEcacNotificationEventsUseCase({
+      ecacAlertNotificationRepository: repository({ listEvents }),
+    });
+
+    await useCase.execute(tenantId, userId);
+
+    expect(listEvents).toHaveBeenCalledWith(
+      tenantId,
+      userId,
+      expect.objectContaining({ limit: 50 }),
+    );
+  });
+
+  it('rejeita período e limite inválidos ao listar eventos', async () => {
+    const listEvents = vi.fn();
+    const useCase = new ListEcacNotificationEventsUseCase({
+      ecacAlertNotificationRepository: repository({ listEvents }),
+    });
+
+    expect(() =>
+      useCase.execute(tenantId, userId, {
+        scheduledFrom: '2026-07-28T00:00:00.000Z',
+        scheduledTo: '2026-07-27T00:00:00.000Z',
+      }),
+    ).toThrowError('Período de agendamento inválido.');
+    expect(() =>
+      useCase.execute(tenantId, userId, { scheduledFrom: 'sem-data' }),
+    ).toThrowError('Filtro de data inválido.');
+    expect(() =>
+      useCase.execute(tenantId, userId, { limit: 201 }),
+    ).toThrowError('A listagem de eventos deve ter limite entre 1 e 200.');
+    expect(listEvents).not.toHaveBeenCalled();
+  });
+
   it('resume eventos do usuário autenticado', async () => {
     const summarizeEvents = vi.fn(async () => ({
       total: 2,
