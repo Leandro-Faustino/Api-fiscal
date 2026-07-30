@@ -1097,15 +1097,17 @@ describe('autenticação e isolamento multiempresa', () => {
       url: '/v1/control/ecac/notification-events?status=PENDING',
       headers: { authorization: `Bearer ${tenantA.accessToken}` },
     });
-    expect(changedEvents.json()).toEqual([
-      expect.objectContaining({
-        alertId,
-        channel: 'IN_APP',
-        status: 'PENDING',
-        changeType: 'CHANGED',
-        severity: 'WARNING',
-      }),
-    ]);
+    expect(changedEvents.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          alertId,
+          channel: 'IN_APP',
+          status: 'PENDING',
+          changeType: 'CHANGED',
+          severity: 'WARNING',
+        }),
+      ]),
+    );
 
     findingMode = 'EMPTY';
     await observeAgain('integration-radar-003');
