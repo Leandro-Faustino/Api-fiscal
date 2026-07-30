@@ -4,7 +4,10 @@ import {
   Prisma,
   type PrismaClient,
 } from '@prisma/client';
-import { NotFoundError } from '../../../../shared/domain/app-error.js';
+import {
+  ConflictError,
+  NotFoundError,
+} from '../../../../shared/domain/app-error.js';
 import type {
   EcacAlertNotificationEvent,
   EcacAlertNotificationPreference,
@@ -301,6 +304,58 @@ export class PrismaEcacAlertNotificationRepository
         },
       });
       return toEvent(delivered);
+    });
+  }
+
+  public async retryFailedEvent(
+    tenantId: string,
+    userId: string,
+    eventId: string,
+    scheduledAt: Date,
+  ): Promise<EcacAlertNotificationEvent> {
+    const row = await this.prisma.ecacAlertNotificationEvent.findUnique({
+      where: { tenantId_id: { tenantId, id: eventId } },
+    });
+    if (!row || row.userId !== userId) {
+      throw new NotFoundError(
+        'Evento de notificação e-CAC não encontrado.',
+        'ECAC_NOTIFICATION_EVENT_NOT_FOUND',
+      );
+    }
+    if (row.status !== 'FAILED') {
+      throw new ConflictError(
+        'Somente eventos de notificação e-CAC com falha podem ser reagendados.',
+        'ECAC_NOTIFICATION_EVENT_NOT_FAILED',
+      );
+    }
+    return this.prisma.$transaction(async (transaction) => {
+      const retried = await transaction.ecacAlertNotificationEvent.update({
+        where: { tenantId_id: { tenantId, id: eventId } },
+        data: {
+          status: 'PENDING',
+          scheduledAt,
+          processingStartedAt: null,
+          deliveredAt: null,
+          failedAt: null,
+          failureCode: null,
+        },
+      });
+      await transaction.auditLog.create({
+        data: {
+          tenantId,
+          actorId: userId,
+          action: 'ecac.notification_event.retry_scheduled',
+          entityType: 'ecac_alert_notification_event',
+          entityId: eventId,
+          metadata: {
+            alertId: retried.alertId,
+            channel: retried.channel,
+            changeType: retried.changeType,
+            scheduledAt: scheduledAt.toISOString(),
+          },
+        },
+      });
+      return toEvent(retried);
     });
   }
 

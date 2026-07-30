@@ -50,7 +50,9 @@ empresa, tipo de consulta, severidade, período de agendamento e limite de
 retorno. O detalhe operacional de um evento específico fica em
 `GET /v1/control/ecac/notification-events/:eventId`, sempre limitado ao usuário
 autenticado. Também permite marcar a entrega interna em
-`POST /v1/control/ecac/notification-events/:eventId/deliver`. Para painéis e
+`POST /v1/control/ecac/notification-events/:eventId/deliver` e recolocar uma
+falha na fila em `POST /v1/control/ecac/notification-events/:eventId/retry`.
+Para painéis e
 suporte operacional, `GET /v1/control/ecac/notification-events/summary` resume
 os eventos do usuário por status e canal, incluindo próxima pendência, última
 entrega e última falha.

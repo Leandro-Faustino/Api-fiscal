@@ -72,6 +72,9 @@ function repository(
     markEventDelivered: vi.fn(async () => {
       throw new Error('not implemented');
     }),
+    retryFailedEvent: vi.fn(async () => {
+      throw new Error('not implemented');
+    }),
     claimPendingEvents: vi.fn(async () => events),
     markEventDeliveredByWorker: vi.fn(async (tenant, id, deliveredAt) => ({
       ...events.find((item) => item.id === id)!,

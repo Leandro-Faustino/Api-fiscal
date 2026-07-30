@@ -5,6 +5,7 @@ import {
   ListEcacNotificationEventsUseCase,
   ListEcacNotificationPreferencesUseCase,
   MarkEcacNotificationEventDeliveredUseCase,
+  RetryEcacNotificationEventUseCase,
   SummarizeEcacNotificationEventsUseCase,
   UpdateEcacNotificationPreferenceUseCase,
 } from '../application/use-cases/manage-ecac-alert-notifications.js';
@@ -93,6 +94,29 @@ function repository(
       failureCode: null,
       createdAt: now,
       updatedAt: deliveredAt,
+    })),
+    retryFailedEvent: vi.fn(async (tenant, user, event, scheduledAt) => ({
+      id: event,
+      tenantId: tenant,
+      alertId: '10000000-0000-4000-8000-000000000005',
+      userId: user,
+      companyId: '10000000-0000-4000-8000-000000000006',
+      queryType: 'TAX_STATUS' as const,
+      channel: 'IN_APP' as const,
+      status: 'PENDING' as const,
+      changeType: 'NEW' as const,
+      severity: 'CRITICAL' as const,
+      title: 'Débito identificado',
+      scheduledAt,
+      attemptCount: 2,
+      maxAttempts: 3,
+      processingStartedAt: null,
+      lastAttemptedAt: now,
+      deliveredAt: null,
+      failedAt: null,
+      failureCode: null,
+      createdAt: now,
+      updatedAt: scheduledAt,
     })),
     claimPendingEvents: vi.fn(async () => []),
     markEventDeliveredByWorker: vi.fn(async () => null),
@@ -303,5 +327,51 @@ describe('notificações de alertas e-CAC', () => {
       eventId,
       expect.any(Date),
     );
+  });
+
+  it('reagenda evento com falha para nova tentativa', async () => {
+    const failedEvent = {
+      ...(await repository().getEvent(tenantId, userId, eventId))!,
+      status: 'FAILED' as const,
+      attemptCount: 2,
+      failedAt: now,
+      failureCode: 'HTTP_503',
+    };
+    const getEvent = vi.fn(async () => failedEvent);
+    const retryFailedEvent = vi.fn(repository().retryFailedEvent);
+    const useCase = new RetryEcacNotificationEventUseCase({
+      ecacAlertNotificationRepository: repository({
+        getEvent,
+        retryFailedEvent,
+      }),
+    });
+
+    const retried = await useCase.execute(tenantId, userId, eventId);
+
+    expect(retried).toMatchObject({
+      id: eventId,
+      status: 'PENDING',
+      attemptCount: 2,
+      failedAt: null,
+      failureCode: null,
+    });
+    expect(retryFailedEvent).toHaveBeenCalledWith(
+      tenantId,
+      userId,
+      eventId,
+      expect.any(Date),
+    );
+  });
+
+  it('rejeita retry de evento que não falhou', async () => {
+    const retryFailedEvent = vi.fn();
+    const useCase = new RetryEcacNotificationEventUseCase({
+      ecacAlertNotificationRepository: repository({ retryFailedEvent }),
+    });
+
+    await expect(useCase.execute(tenantId, userId, eventId)).rejects.toMatchObject({
+      code: 'ECAC_NOTIFICATION_EVENT_NOT_FAILED',
+    });
+    expect(retryFailedEvent).not.toHaveBeenCalled();
   });
 });
