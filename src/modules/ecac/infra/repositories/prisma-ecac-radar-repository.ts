@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   Prisma,
   type EcacAlert as PrismaEcacAlert,
@@ -20,6 +20,7 @@ import type {
 import type {
   ClaimedEcacJob,
   EcacAlert,
+  EcacAlertChangeType,
   EcacFinding,
   EcacFindingSeverity,
   EcacQueryType,
@@ -133,6 +134,16 @@ function serviceAllowsQuery(services: string[], queryType: EcacQueryType): boole
     normalized.has('INTEGRA_CONTADOR') ||
     normalized.has(queryType)
   );
+}
+
+const severityRank: Record<EcacFindingSeverity, number> = {
+  INFO: 0,
+  WARNING: 1,
+  CRITICAL: 2,
+};
+
+function notificationDedupeKey(parts: string[]): string {
+  return createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }
 
 export async function acquireEcacStreamLock(
@@ -881,7 +892,7 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
         lastObservedAt: completedAt,
       };
       if (!alert) {
-        await transaction.ecacAlert.create({
+        const createdAlert = await transaction.ecacAlert.create({
           data: {
             id: randomUUID(),
             tenantId: job.tenantId,
@@ -894,12 +905,19 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
             firstObservedAt: completedAt,
           },
         });
+        await this.queueAlertNotifications(
+          transaction,
+          createdAlert,
+          'NEW',
+          job.id,
+          completedAt,
+        );
         summary.created += 1;
         continue;
       }
 
       if (alert.status === 'RESOLVED') {
-        await transaction.ecacAlert.update({
+        const reopenedAlert = await transaction.ecacAlert.update({
           where: { tenantId_id: { tenantId: job.tenantId, id: alert.id } },
           data: {
             ...commonData,
@@ -910,9 +928,16 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
             resolvedAt: null,
           },
         });
+        await this.queueAlertNotifications(
+          transaction,
+          reopenedAlert,
+          'REOPENED',
+          job.id,
+          completedAt,
+        );
         summary.reopened += 1;
       } else if (alert.contentHash !== finding.contentHash) {
-        await transaction.ecacAlert.update({
+        const changedAlert = await transaction.ecacAlert.update({
           where: { tenantId_id: { tenantId: job.tenantId, id: alert.id } },
           data: {
             ...commonData,
@@ -923,6 +948,13 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
             resolvedAt: null,
           },
         });
+        await this.queueAlertNotifications(
+          transaction,
+          changedAlert,
+          'CHANGED',
+          job.id,
+          completedAt,
+        );
         summary.changed += 1;
       } else {
         await transaction.ecacAlert.update({
@@ -934,6 +966,17 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
     }
 
     const currentKeys = [...fingerprinted.keys()];
+    const alertsToResolve = await transaction.ecacAlert.findMany({
+      where: {
+        tenantId: job.tenantId,
+        companyId: job.companyId,
+        queryType: job.queryType,
+        status: { in: ['OPEN', 'ACKNOWLEDGED'] },
+        ...(currentKeys.length > 0
+          ? { findingKey: { notIn: currentKeys } }
+          : {}),
+      },
+    });
     const resolved = await transaction.ecacAlert.updateMany({
       where: {
         tenantId: job.tenantId,
@@ -952,6 +995,15 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
       },
     });
     summary.resolved = resolved.count;
+    for (const alert of alertsToResolve) {
+      await this.queueAlertNotifications(
+        transaction,
+        { ...alert, latestJobId: job.id },
+        'RESOLVED',
+        job.id,
+        completedAt,
+      );
+    }
 
     await transaction.ecacObservationCursor.upsert({
       where: {
@@ -976,6 +1028,70 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
       },
     });
     return summary;
+  }
+
+  private async queueAlertNotifications(
+    transaction: Prisma.TransactionClient,
+    alert: {
+      id: string;
+      tenantId: string;
+      companyId: string;
+      latestJobId: string;
+      queryType: EcacQueryType;
+      title: string;
+      severity: EcacFindingSeverity;
+    },
+    changeType: EcacAlertChangeType,
+    jobId: string,
+    scheduledAt: Date,
+  ): Promise<void> {
+    const preferences = await transaction.ecacAlertNotificationPreference.findMany({
+      where: {
+        tenantId: alert.tenantId,
+        enabled: true,
+        ...(changeType === 'RESOLVED' ? { includeResolved: true } : {}),
+        user: {
+          memberships: {
+            some: {
+              tenantId: alert.tenantId,
+              status: 'ACTIVE',
+            },
+          },
+        },
+      },
+    });
+    const events = preferences
+      .filter(
+        (preference) =>
+          severityRank[alert.severity] >= severityRank[preference.minimumSeverity],
+      )
+      .map((preference) => ({
+        id: randomUUID(),
+        tenantId: alert.tenantId,
+        alertId: alert.id,
+        userId: preference.userId,
+        companyId: alert.companyId,
+        queryType: alert.queryType,
+        channel: preference.channel,
+        status: 'PENDING' as const,
+        changeType,
+        severity: alert.severity,
+        title: alert.title,
+        dedupeKey: notificationDedupeKey([
+          alert.id,
+          preference.userId,
+          preference.channel,
+          changeType,
+          jobId,
+        ]),
+        scheduledAt,
+      }));
+    if (events.length > 0) {
+      await transaction.ecacAlertNotificationEvent.createMany({
+        data: events,
+        skipDuplicates: true,
+      });
+    }
   }
 
   private async updateBatchStatus(

@@ -97,6 +97,8 @@ interface MfaSetupResponse {
 
 async function cleanDatabase(): Promise<void> {
   await prisma.auditLog.deleteMany();
+  await prisma.ecacAlertNotificationEvent.deleteMany();
+  await prisma.ecacAlertNotificationPreference.deleteMany();
   await prisma.ecacObservationCursor.deleteMany();
   await prisma.ecacAlert.deleteMany();
   await prisma.ecacFinding.deleteMany();
@@ -718,6 +720,24 @@ describe('autenticação e isolamento multiempresa', () => {
     expect(powerResponse.statusCode).toBe(201);
     const power = powerResponse.json<{ id: string }>();
 
+    const notificationPreference = await app.inject({
+      method: 'PUT',
+      url: '/v1/control/ecac/notification-preferences/IN_APP',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: {
+        enabled: true,
+        minimumSeverity: 'WARNING',
+        includeResolved: true,
+      },
+    });
+    expect(notificationPreference.statusCode).toBe(200);
+    expect(notificationPreference.json()).toMatchObject({
+      channel: 'IN_APP',
+      enabled: true,
+      minimumSeverity: 'WARNING',
+      includeResolved: true,
+    });
+
     const payload = {
       requestKey: 'integration-radar-001',
       queryType: 'TAX_STATUS',
@@ -853,6 +873,38 @@ describe('autenticação e isolamento multiempresa', () => {
       }),
     ]);
     const alertId = firstAlerts.json<Array<{ id: string }>>()[0]!.id;
+
+    const firstEvents = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/notification-events?status=PENDING',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(firstEvents.statusCode).toBe(200);
+    expect(firstEvents.json()).toEqual([
+      expect.objectContaining({
+        alertId,
+        userId: tenantA.session.userId,
+        companyId: company.id,
+        channel: 'IN_APP',
+        status: 'PENDING',
+        changeType: 'NEW',
+        severity: 'CRITICAL',
+        title: 'Débito identificado',
+      }),
+    ]);
+    const firstEventId = firstEvents.json<Array<{ id: string }>>()[0]!.id;
+    const deliveredEvent = await app.inject({
+      method: 'POST',
+      url: `/v1/control/ecac/notification-events/${firstEventId}/deliver`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(deliveredEvent.statusCode).toBe(200);
+    expect(deliveredEvent.json()).toMatchObject({
+      id: firstEventId,
+      status: 'DELIVERED',
+      deliveredAt: expect.any(String),
+    });
+
     const acknowledged = await app.inject({
       method: 'POST',
       url: `/v1/control/ecac/alerts/${alertId}/acknowledge`,
@@ -922,6 +974,20 @@ describe('autenticação e isolamento multiempresa', () => {
         acknowledgedById: null,
       }),
     ]);
+    const changedEvents = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/notification-events?status=PENDING',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(changedEvents.json()).toEqual([
+      expect.objectContaining({
+        alertId,
+        channel: 'IN_APP',
+        status: 'PENDING',
+        changeType: 'CHANGED',
+        severity: 'WARNING',
+      }),
+    ]);
 
     findingMode = 'EMPTY';
     await observeAgain('integration-radar-003');
@@ -971,9 +1037,15 @@ describe('autenticação e isolamento multiempresa', () => {
       url: '/v1/control/ecac/alerts',
       headers: { authorization: `Bearer ${tenantB.accessToken}` },
     });
+    const otherTenantEvents = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/notification-events',
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
     expect(crossTenantRead.statusCode).toBe(404);
     expect(otherTenantFindings.json()).toEqual([]);
     expect(otherTenantAlerts.json()).toEqual([]);
+    expect(otherTenantEvents.json()).toEqual([]);
 
     await app.close();
   });

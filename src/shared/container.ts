@@ -65,6 +65,7 @@ import {
 import { PrismaCredentialAuthorityRepository } from '../modules/credentials/infra/repositories/prisma-credential-authority-repository.js';
 import type { EcacGateway } from '../modules/ecac/application/ports/ecac-gateway.js';
 import type { EcacRadarRepository } from '../modules/ecac/application/ports/ecac-radar-repository.js';
+import type { EcacAlertNotificationRepository } from '../modules/ecac/application/ports/ecac-alert-notification-repository.js';
 import { ProcessEcacJobsUseCase } from '../modules/ecac/application/use-cases/process-ecac-jobs.js';
 import {
   AcknowledgeEcacAlertUseCase,
@@ -73,7 +74,14 @@ import {
   ListEcacFindingsUseCase,
   ListEcacSyncBatchesUseCase,
 } from '../modules/ecac/application/use-cases/read-ecac-radar.js';
+import {
+  ListEcacNotificationEventsUseCase,
+  ListEcacNotificationPreferencesUseCase,
+  MarkEcacNotificationEventDeliveredUseCase,
+  UpdateEcacNotificationPreferenceUseCase,
+} from '../modules/ecac/application/use-cases/manage-ecac-alert-notifications.js';
 import { RequestEcacSyncUseCase } from '../modules/ecac/application/use-cases/request-ecac-sync.js';
+import { PrismaEcacAlertNotificationRepository } from '../modules/ecac/infra/repositories/prisma-ecac-alert-notification-repository.js';
 import { PrismaEcacRadarRepository } from '../modules/ecac/infra/repositories/prisma-ecac-radar-repository.js';
 import type { SerproConnectionRepository } from '../modules/ecac/application/ports/serpro-connection-repository.js';
 import type { SerproHttpTransport } from '../modules/ecac/application/ports/serpro-http-transport.js';
@@ -165,6 +173,11 @@ export interface Cradle {
   listEcacFindingsUseCase: ListEcacFindingsUseCase;
   listEcacAlertsUseCase: ListEcacAlertsUseCase;
   acknowledgeEcacAlertUseCase: AcknowledgeEcacAlertUseCase;
+  ecacAlertNotificationRepository: EcacAlertNotificationRepository;
+  listEcacNotificationPreferencesUseCase: ListEcacNotificationPreferencesUseCase;
+  updateEcacNotificationPreferenceUseCase: UpdateEcacNotificationPreferenceUseCase;
+  listEcacNotificationEventsUseCase: ListEcacNotificationEventsUseCase;
+  markEcacNotificationEventDeliveredUseCase: MarkEcacNotificationEventDeliveredUseCase;
 }
 
 export function createApplicationContainer(env: Env, prismaClient: PrismaClient): AwilixContainer<Cradle> {
@@ -266,6 +279,9 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     ).singleton(),
     ecacGateway: asClass(SerproIntegraContadorGateway).singleton(),
     ecacRadarRepository: asClass(PrismaEcacRadarRepository).singleton(),
+    ecacAlertNotificationRepository: asClass(
+      PrismaEcacAlertNotificationRepository,
+    ).singleton(),
     requestEcacSyncUseCase: asClass(RequestEcacSyncUseCase).singleton(),
     getEcacSyncBatchUseCase: asClass(GetEcacSyncBatchUseCase).singleton(),
     listEcacSyncBatchesUseCase: asClass(ListEcacSyncBatchesUseCase).singleton(),
@@ -274,6 +290,18 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     listEcacAlertsUseCase: asClass(ListEcacAlertsUseCase).singleton(),
     acknowledgeEcacAlertUseCase: asClass(
       AcknowledgeEcacAlertUseCase,
+    ).singleton(),
+    listEcacNotificationPreferencesUseCase: asClass(
+      ListEcacNotificationPreferencesUseCase,
+    ).singleton(),
+    updateEcacNotificationPreferenceUseCase: asClass(
+      UpdateEcacNotificationPreferenceUseCase,
+    ).singleton(),
+    listEcacNotificationEventsUseCase: asClass(
+      ListEcacNotificationEventsUseCase,
+    ).singleton(),
+    markEcacNotificationEventDeliveredUseCase: asClass(
+      MarkEcacNotificationEventDeliveredUseCase,
     ).singleton(),
   });
 
