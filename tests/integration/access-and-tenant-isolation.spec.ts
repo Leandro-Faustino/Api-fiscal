@@ -1052,6 +1052,34 @@ describe('autenticação e isolamento multiempresa', () => {
         }),
       ]),
     );
+    const acknowledgedEvent = await app.inject({
+      method: 'POST',
+      url: `/v1/control/ecac/notification-events/${firstEventId}/acknowledge`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(acknowledgedEvent.statusCode).toBe(200);
+    expect(acknowledgedEvent.json()).toMatchObject({
+      actorId: tenantA.session.userId,
+      action: 'ecac.notification_event.acknowledged',
+      entityType: 'ecac_alert_notification_event',
+      entityId: firstEventId,
+      metadata: expect.objectContaining({
+        alertId,
+        channel: 'IN_APP',
+        changeType: 'NEW',
+        status: 'PENDING',
+      }),
+    });
+    const acknowledgedAgain = await app.inject({
+      method: 'POST',
+      url: `/v1/control/ecac/notification-events/${firstEventId}/acknowledge`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(acknowledgedAgain.statusCode).toBe(200);
+    expect(acknowledgedAgain.json()).toMatchObject({
+      id: acknowledgedEvent.json<{ id: string }>().id,
+      action: 'ecac.notification_event.acknowledged',
+    });
 
     const acknowledged = await app.inject({
       method: 'POST',
@@ -1202,6 +1230,11 @@ describe('autenticação e isolamento multiempresa', () => {
       url: `/v1/control/ecac/notification-events/${firstEventId}/audit`,
       headers: { authorization: `Bearer ${tenantB.accessToken}` },
     });
+    const otherTenantEventAcknowledge = await app.inject({
+      method: 'POST',
+      url: `/v1/control/ecac/notification-events/${firstEventId}/acknowledge`,
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
     const otherTenantEventSummary = await app.inject({
       method: 'GET',
       url: '/v1/control/ecac/notification-events/summary',
@@ -1213,6 +1246,7 @@ describe('autenticação e isolamento multiempresa', () => {
     expect(otherTenantEvents.json()).toEqual([]);
     expect(otherTenantEventDetail.statusCode).toBe(404);
     expect(otherTenantEventAudit.statusCode).toBe(404);
+    expect(otherTenantEventAcknowledge.statusCode).toBe(404);
     expect(otherTenantEventSummary.json()).toEqual({
       total: 0,
       byStatus: {

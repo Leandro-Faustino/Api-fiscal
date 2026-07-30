@@ -861,6 +861,33 @@ export async function ecacRadarRoutes(
   );
 
   app.post<{ Params: NotificationEventParams }>(
+    '/v1/control/ecac/notification-events/:eventId/acknowledge',
+    {
+      preHandler: [authenticate, authorize('ecac:write')],
+      schema: {
+        security: [{ bearerAuth: [] }],
+        tags: ['Control - Radar e-CAC'],
+        summary: 'Registrar tratamento operacional de um evento de notificação e-CAC',
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['eventId'],
+          properties: { eventId: { type: 'string', format: 'uuid' } },
+        },
+        response: { 200: notificationEventAuditEntrySchema },
+      },
+    },
+    async (request) => {
+      const context = request.authContext!;
+      return cradle.acknowledgeEcacNotificationEventUseCase.execute(
+        context.tenantId,
+        context.userId,
+        request.params.eventId,
+      );
+    },
+  );
+
+  app.post<{ Params: NotificationEventParams }>(
     '/v1/control/ecac/notification-events/:eventId/retry',
     {
       preHandler: [authenticate, authorize('ecac:write')],

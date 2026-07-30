@@ -67,6 +67,12 @@ export interface EcacAlertNotificationRepository {
     eventId: string,
     limit: number,
   ): Promise<EcacNotificationEventAuditEntry[]>;
+  acknowledgeEvent(
+    tenantId: string,
+    userId: string,
+    eventId: string,
+    acknowledgedAt: Date,
+  ): Promise<EcacNotificationEventAuditEntry>;
   summarizeEvents(
     tenantId: string,
     userId: string,

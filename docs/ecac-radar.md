@@ -50,7 +50,10 @@ empresa, tipo de consulta, severidade, período de agendamento e limite de
 retorno. O detalhe operacional de um evento específico fica em
 `GET /v1/control/ecac/notification-events/:eventId`, sempre limitado ao usuário
 autenticado, e sua trilha operacional auditável em
-`GET /v1/control/ecac/notification-events/:eventId/audit`. Também permite marcar a entrega interna em
+`GET /v1/control/ecac/notification-events/:eventId/audit`. O operador pode
+registrar o tratamento do evento em
+`POST /v1/control/ecac/notification-events/:eventId/acknowledge`, sem alterar o
+status técnico de entrega. Também permite marcar a entrega interna em
 `POST /v1/control/ecac/notification-events/:eventId/deliver` e recolocar uma
 falha na fila em `POST /v1/control/ecac/notification-events/:eventId/retry`.
 Para painéis e
