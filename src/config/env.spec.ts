@@ -90,4 +90,28 @@ describe('configuração do ambiente', () => {
       'O TTL do lock do worker e-CAC deve cobrir autenticação, renovação e consultas ao SERPRO.',
     );
   });
+
+  it('valida os limites globais do worker de notificações e-CAC', () => {
+    const valid = loadEnv({
+      ...requiredEnvironment,
+      ECAC_NOTIFICATION_WORKER_POLL_INTERVAL_MS: '5000',
+      ECAC_NOTIFICATION_WORKER_BATCH_SIZE: '50',
+      ECAC_NOTIFICATION_WORKER_PROCESSING_TTL_MS: '600000',
+      ECAC_NOTIFICATION_RETRY_DELAY_MS: '300000',
+    });
+    expect(valid.ECAC_NOTIFICATION_WORKER_POLL_INTERVAL_MS).toBe(5000);
+    expect(valid.ECAC_NOTIFICATION_WORKER_BATCH_SIZE).toBe(50);
+    expect(valid.ECAC_NOTIFICATION_WORKER_PROCESSING_TTL_MS).toBe(600000);
+    expect(valid.ECAC_NOTIFICATION_RETRY_DELAY_MS).toBe(300000);
+
+    expect(() =>
+      loadEnv({
+        ...requiredEnvironment,
+        ECAC_NOTIFICATION_WORKER_PROCESSING_TTL_MS: '60000',
+        ECAC_NOTIFICATION_RETRY_DELAY_MS: '60000',
+      }),
+    ).toThrow(
+      'O TTL de processamento das notificações e-CAC deve ser maior que o atraso de retry.',
+    );
+  });
 });

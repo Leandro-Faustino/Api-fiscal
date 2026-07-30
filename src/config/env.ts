@@ -60,6 +60,30 @@ const envSchema = z
       .min(60_000)
       .max(3_600_000)
       .default(600_000),
+    ECAC_NOTIFICATION_WORKER_POLL_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(300_000)
+      .default(30_000),
+    ECAC_NOTIFICATION_WORKER_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(25),
+    ECAC_NOTIFICATION_WORKER_PROCESSING_TTL_MS: z.coerce
+      .number()
+      .int()
+      .min(60_000)
+      .max(3_600_000)
+      .default(600_000),
+    ECAC_NOTIFICATION_RETRY_DELAY_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(3_600_000)
+      .default(300_000),
   })
   .superRefine((env, context) => {
     const encodedVaultKey = env.CREDENTIAL_VAULT_MASTER_KEY.trim();
@@ -126,6 +150,18 @@ const envSchema = z
         path: ['ECAC_WORKER_LOCK_TTL_MS'],
         message:
           'O TTL do lock do worker e-CAC deve cobrir autenticação, renovação e consultas ao SERPRO.',
+      });
+    }
+
+    if (
+      env.ECAC_NOTIFICATION_WORKER_PROCESSING_TTL_MS <=
+      env.ECAC_NOTIFICATION_RETRY_DELAY_MS
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ECAC_NOTIFICATION_WORKER_PROCESSING_TTL_MS'],
+        message:
+          'O TTL de processamento das notificações e-CAC deve ser maior que o atraso de retry.',
       });
     }
 

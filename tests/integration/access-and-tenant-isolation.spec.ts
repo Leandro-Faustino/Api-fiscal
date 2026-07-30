@@ -59,6 +59,10 @@ const env: Env = {
   ECAC_WORKER_POLL_INTERVAL_MS: 30_000,
   ECAC_WORKER_BATCH_SIZE: 25,
   ECAC_WORKER_LOCK_TTL_MS: 600_000,
+  ECAC_NOTIFICATION_WORKER_POLL_INTERVAL_MS: 30_000,
+  ECAC_NOTIFICATION_WORKER_BATCH_SIZE: 25,
+  ECAC_NOTIFICATION_WORKER_PROCESSING_TTL_MS: 600_000,
+  ECAC_NOTIFICATION_RETRY_DELAY_MS: 300_000,
 };
 
 const registryData: CompanyRegistryData = {
@@ -893,16 +897,32 @@ describe('autenticação e isolamento multiempresa', () => {
       }),
     ]);
     const firstEventId = firstEvents.json<Array<{ id: string }>>()[0]!.id;
-    const deliveredEvent = await app.inject({
-      method: 'POST',
-      url: `/v1/control/ecac/notification-events/${firstEventId}/deliver`,
-      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    const notificationProcess =
+      await workerContainer.cradle.processEcacNotificationEventsUseCase.executeScheduled(
+        env.ECAC_NOTIFICATION_WORKER_BATCH_SIZE,
+        env.ECAC_NOTIFICATION_WORKER_PROCESSING_TTL_MS,
+      );
+    expect(notificationProcess).toEqual({
+      claimed: 1,
+      delivered: 1,
+      failed: 0,
+      retryScheduled: 0,
+      missing: 0,
     });
-    expect(deliveredEvent.statusCode).toBe(200);
-    expect(deliveredEvent.json()).toMatchObject({
+    const deliveredEvent = await prisma.ecacAlertNotificationEvent.findUniqueOrThrow({
+      where: {
+        tenantId_id: {
+          tenantId: tenantA.session.tenantId,
+          id: firstEventId,
+        },
+      },
+    });
+    expect(deliveredEvent).toMatchObject({
       id: firstEventId,
       status: 'DELIVERED',
-      deliveredAt: expect.any(String),
+      attemptCount: 1,
+      processingStartedAt: null,
+      deliveredAt: expect.any(Date),
     });
 
     const acknowledged = await app.inject({

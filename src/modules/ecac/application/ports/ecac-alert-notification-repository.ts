@@ -21,6 +21,20 @@ export interface ListEcacNotificationEventsFilter {
   status?: EcacNotificationEventStatus;
 }
 
+export interface ClaimEcacNotificationEventsInput {
+  limit: number;
+  claimedAt: Date;
+  staleProcessingBefore: Date;
+}
+
+export interface MarkEcacNotificationEventFailedInput {
+  tenantId: string;
+  eventId: string;
+  failedAt: Date;
+  failureCode: string;
+  retryAt?: Date | null;
+}
+
 export interface EcacAlertNotificationRepository {
   listPreferences(
     tenantId: string,
@@ -40,4 +54,15 @@ export interface EcacAlertNotificationRepository {
     eventId: string,
     deliveredAt: Date,
   ): Promise<EcacAlertNotificationEvent>;
+  claimPendingEvents(
+    input: ClaimEcacNotificationEventsInput,
+  ): Promise<EcacAlertNotificationEvent[]>;
+  markEventDeliveredByWorker(
+    tenantId: string,
+    eventId: string,
+    deliveredAt: Date,
+  ): Promise<EcacAlertNotificationEvent | null>;
+  markEventFailedByWorker(
+    input: MarkEcacNotificationEventFailedInput,
+  ): Promise<EcacAlertNotificationEvent | null>;
 }
