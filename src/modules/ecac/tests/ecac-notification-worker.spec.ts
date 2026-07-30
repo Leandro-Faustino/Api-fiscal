@@ -51,6 +51,7 @@ function repository(
       throw new Error('not implemented');
     }),
     listEvents: vi.fn(async () => []),
+    getEvent: vi.fn(async () => null),
     summarizeEvents: vi.fn(async () => ({
       total: 0,
       byStatus: {

@@ -903,6 +903,22 @@ describe('autenticação e isolamento multiempresa', () => {
       }),
     ]);
     const firstEventId = firstEvents.json<Array<{ id: string }>>()[0]!.id;
+    const firstEventDetail = await app.inject({
+      method: 'GET',
+      url: `/v1/control/ecac/notification-events/${firstEventId}`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(firstEventDetail.statusCode).toBe(200);
+    expect(firstEventDetail.json()).toMatchObject({
+      id: firstEventId,
+      alertId,
+      userId: tenantA.session.userId,
+      companyId: company.id,
+      channel: 'IN_APP',
+      status: 'PENDING',
+      changeType: 'NEW',
+      severity: 'CRITICAL',
+    });
     const notificationProcess =
       await workerContainer.cradle.processEcacNotificationEventsUseCase.executeScheduled(
         env.ECAC_NOTIFICATION_WORKER_BATCH_SIZE,
@@ -1091,6 +1107,11 @@ describe('autenticação e isolamento multiempresa', () => {
       url: '/v1/control/ecac/notification-events',
       headers: { authorization: `Bearer ${tenantB.accessToken}` },
     });
+    const otherTenantEventDetail = await app.inject({
+      method: 'GET',
+      url: `/v1/control/ecac/notification-events/${firstEventId}`,
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
     const otherTenantEventSummary = await app.inject({
       method: 'GET',
       url: '/v1/control/ecac/notification-events/summary',
@@ -1100,6 +1121,7 @@ describe('autenticação e isolamento multiempresa', () => {
     expect(otherTenantFindings.json()).toEqual([]);
     expect(otherTenantAlerts.json()).toEqual([]);
     expect(otherTenantEvents.json()).toEqual([]);
+    expect(otherTenantEventDetail.statusCode).toBe(404);
     expect(otherTenantEventSummary.json()).toEqual({
       total: 0,
       byStatus: {

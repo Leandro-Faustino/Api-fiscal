@@ -192,6 +192,20 @@ export class PrismaEcacAlertNotificationRepository
     return rows.map(toEvent);
   }
 
+  public async getEvent(
+    tenantId: string,
+    userId: string,
+    eventId: string,
+  ): Promise<EcacAlertNotificationEvent | null> {
+    const row = await this.prisma.ecacAlertNotificationEvent.findUnique({
+      where: { tenantId_id: { tenantId, id: eventId } },
+    });
+    if (!row || row.userId !== userId) {
+      return null;
+    }
+    return toEvent(row);
+  }
+
   public async summarizeEvents(
     tenantId: string,
     userId: string,

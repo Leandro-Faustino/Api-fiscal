@@ -56,6 +56,11 @@ export interface EcacAlertNotificationRepository {
     userId: string,
     filter?: ListEcacNotificationEventsFilter,
   ): Promise<EcacAlertNotificationEvent[]>;
+  getEvent(
+    tenantId: string,
+    userId: string,
+    eventId: string,
+  ): Promise<EcacAlertNotificationEvent | null>;
   summarizeEvents(
     tenantId: string,
     userId: string,

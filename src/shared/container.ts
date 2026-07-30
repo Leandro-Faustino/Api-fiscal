@@ -77,6 +77,7 @@ import {
   ListEcacSyncBatchesUseCase,
 } from '../modules/ecac/application/use-cases/read-ecac-radar.js';
 import {
+  GetEcacNotificationEventUseCase,
   ListEcacNotificationEventsUseCase,
   ListEcacNotificationPreferencesUseCase,
   MarkEcacNotificationEventDeliveredUseCase,
@@ -194,6 +195,7 @@ export interface Cradle {
   listEcacNotificationPreferencesUseCase: ListEcacNotificationPreferencesUseCase;
   updateEcacNotificationPreferenceUseCase: UpdateEcacNotificationPreferenceUseCase;
   listEcacNotificationEventsUseCase: ListEcacNotificationEventsUseCase;
+  getEcacNotificationEventUseCase: GetEcacNotificationEventUseCase;
   summarizeEcacNotificationEventsUseCase: SummarizeEcacNotificationEventsUseCase;
   markEcacNotificationEventDeliveredUseCase: MarkEcacNotificationEventDeliveredUseCase;
 }
@@ -331,6 +333,9 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     ).singleton(),
     listEcacNotificationEventsUseCase: asClass(
       ListEcacNotificationEventsUseCase,
+    ).singleton(),
+    getEcacNotificationEventUseCase: asClass(
+      GetEcacNotificationEventUseCase,
     ).singleton(),
     summarizeEcacNotificationEventsUseCase: asClass(
       SummarizeEcacNotificationEventsUseCase,
