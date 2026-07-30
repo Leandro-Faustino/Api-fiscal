@@ -9,6 +9,7 @@ import type {
   EcacAlertNotificationPreference,
   EcacFindingSeverity,
   EcacNotificationChannel,
+  EcacNotificationEventAuditEntry,
   EcacNotificationEventSummary,
   EcacNotificationEventStatus,
   EcacQueryType,
@@ -31,6 +32,8 @@ const eventStatuses: EcacNotificationEventStatus[] = [
   'FAILED',
 ];
 const maxListEventsLimit = 200;
+const defaultAuditTrailLimit = 50;
+const maxAuditTrailLimit = 100;
 
 export interface ListEcacNotificationEventsInput {
   channel?: EcacNotificationChannel;
@@ -218,6 +221,39 @@ export class GetEcacNotificationEventUseCase {
       );
     }
     return event;
+  }
+}
+
+export class ListEcacNotificationEventAuditUseCase {
+  private readonly repository: EcacAlertNotificationRepository;
+
+  public constructor({ ecacAlertNotificationRepository }: Dependencies) {
+    this.repository = ecacAlertNotificationRepository;
+  }
+
+  public async execute(
+    tenantId: string,
+    userId: string,
+    eventId: string,
+    limit = defaultAuditTrailLimit,
+  ): Promise<EcacNotificationEventAuditEntry[]> {
+    if (
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > maxAuditTrailLimit
+    ) {
+      throw new ValidationError(
+        `A auditoria do evento deve ter limite entre 1 e ${maxAuditTrailLimit}.`,
+      );
+    }
+    const event = await this.repository.getEvent(tenantId, userId, eventId);
+    if (!event) {
+      throw new NotFoundError(
+        'Evento de notificação e-CAC não encontrado.',
+        'ECAC_NOTIFICATION_EVENT_NOT_FOUND',
+      );
+    }
+    return this.repository.listEventAuditTrail(tenantId, eventId, limit);
   }
 }
 

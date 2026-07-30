@@ -52,6 +52,7 @@ function repository(
     }),
     listEvents: vi.fn(async () => []),
     getEvent: vi.fn(async () => null),
+    listEventAuditTrail: vi.fn(async () => []),
     summarizeEvents: vi.fn(async () => ({
       total: 0,
       byStatus: {

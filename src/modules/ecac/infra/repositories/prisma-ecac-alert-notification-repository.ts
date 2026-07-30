@@ -1,6 +1,7 @@
 import {
   type EcacAlertNotificationEvent as PrismaEcacAlertNotificationEvent,
   type EcacAlertNotificationPreference as PrismaEcacAlertNotificationPreference,
+  type AuditLog as PrismaAuditLog,
   Prisma,
   type PrismaClient,
 } from '@prisma/client';
@@ -11,6 +12,7 @@ import {
 import type {
   EcacAlertNotificationEvent,
   EcacAlertNotificationPreference,
+  EcacNotificationEventAuditEntry,
   EcacNotificationEventSummary,
 } from '../../domain/ecac-radar.js';
 import type {
@@ -66,6 +68,19 @@ function toEvent(
     failureCode: row.failureCode,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+function toAuditEntry(row: PrismaAuditLog): EcacNotificationEventAuditEntry {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    actorId: row.actorId,
+    action: row.action,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    metadata: row.metadata,
+    occurredAt: row.occurredAt,
   };
 }
 
@@ -207,6 +222,23 @@ export class PrismaEcacAlertNotificationRepository
       return null;
     }
     return toEvent(row);
+  }
+
+  public async listEventAuditTrail(
+    tenantId: string,
+    eventId: string,
+    limit: number,
+  ): Promise<EcacNotificationEventAuditEntry[]> {
+    const rows = await this.prisma.auditLog.findMany({
+      where: {
+        tenantId,
+        entityType: 'ecac_alert_notification_event',
+        entityId: eventId,
+      },
+      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+      take: limit,
+    });
+    return rows.map(toAuditEntry);
   }
 
   public async summarizeEvents(

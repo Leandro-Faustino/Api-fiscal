@@ -114,6 +114,17 @@ export interface EcacNotificationEventSummary {
   lastFailureCode: string | null;
 }
 
+export interface EcacNotificationEventAuditEntry {
+  id: string;
+  tenantId: string;
+  actorId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  metadata: unknown;
+  occurredAt: Date;
+}
+
 export interface ComparableEcacFinding {
   code: string;
   category: string;

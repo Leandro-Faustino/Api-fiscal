@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { EcacAlertNotificationRepository } from '../application/ports/ecac-alert-notification-repository.js';
 import {
   GetEcacNotificationEventUseCase,
+  ListEcacNotificationEventAuditUseCase,
   ListEcacNotificationEventsUseCase,
   ListEcacNotificationPreferencesUseCase,
   MarkEcacNotificationEventDeliveredUseCase,
@@ -55,6 +56,18 @@ function repository(
       createdAt: now,
       updatedAt: now,
     })),
+    listEventAuditTrail: vi.fn(async (tenant, event, limit) => [
+      {
+        id: '10000000-0000-4000-8000-000000000007',
+        tenantId: tenant,
+        actorId: userId,
+        action: 'ecac.notification_event.retry_scheduled',
+        entityType: 'ecac_alert_notification_event',
+        entityId: event,
+        metadata: { limit },
+        occurredAt: now,
+      },
+    ]),
     summarizeEvents: vi.fn(async () => ({
       total: 0,
       byStatus: {
@@ -276,6 +289,63 @@ describe('notificações de alertas e-CAC', () => {
       code: 'ECAC_NOTIFICATION_EVENT_NOT_FOUND',
     });
     expect(getEvent).toHaveBeenCalledWith(tenantId, userId, eventId);
+  });
+
+  it('lista auditoria de evento do próprio usuário', async () => {
+    const getEvent = vi.fn(repository().getEvent);
+    const listEventAuditTrail = vi.fn(repository().listEventAuditTrail);
+    const useCase = new ListEcacNotificationEventAuditUseCase({
+      ecacAlertNotificationRepository: repository({
+        getEvent,
+        listEventAuditTrail,
+      }),
+    });
+
+    await expect(useCase.execute(tenantId, userId, eventId, 10)).resolves.toEqual([
+      expect.objectContaining({
+        tenantId,
+        actorId: userId,
+        action: 'ecac.notification_event.retry_scheduled',
+        entityId: eventId,
+      }),
+    ]);
+    expect(getEvent).toHaveBeenCalledWith(tenantId, userId, eventId);
+    expect(listEventAuditTrail).toHaveBeenCalledWith(tenantId, eventId, 10);
+  });
+
+  it('não lista auditoria de evento de outro usuário', async () => {
+    const getEvent = vi.fn(async () => null);
+    const listEventAuditTrail = vi.fn();
+    const useCase = new ListEcacNotificationEventAuditUseCase({
+      ecacAlertNotificationRepository: repository({
+        getEvent,
+        listEventAuditTrail,
+      }),
+    });
+
+    await expect(
+      useCase.execute(tenantId, userId, eventId),
+    ).rejects.toMatchObject({
+      code: 'ECAC_NOTIFICATION_EVENT_NOT_FOUND',
+    });
+    expect(listEventAuditTrail).not.toHaveBeenCalled();
+  });
+
+  it('rejeita limite inválido ao listar auditoria de evento', async () => {
+    const getEvent = vi.fn();
+    const listEventAuditTrail = vi.fn();
+    const useCase = new ListEcacNotificationEventAuditUseCase({
+      ecacAlertNotificationRepository: repository({
+        getEvent,
+        listEventAuditTrail,
+      }),
+    });
+
+    await expect(
+      useCase.execute(tenantId, userId, eventId, 101),
+    ).rejects.toThrowError('A auditoria do evento deve ter limite entre 1 e 100.');
+    expect(getEvent).not.toHaveBeenCalled();
+    expect(listEventAuditTrail).not.toHaveBeenCalled();
   });
 
   it('resume eventos do usuário autenticado', async () => {

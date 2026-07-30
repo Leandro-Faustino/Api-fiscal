@@ -49,7 +49,8 @@ aquele tipo de mudança. A API lista a caixa de saída do usuário em
 empresa, tipo de consulta, severidade, período de agendamento e limite de
 retorno. O detalhe operacional de um evento específico fica em
 `GET /v1/control/ecac/notification-events/:eventId`, sempre limitado ao usuário
-autenticado. Também permite marcar a entrega interna em
+autenticado, e sua trilha operacional auditável em
+`GET /v1/control/ecac/notification-events/:eventId/audit`. Também permite marcar a entrega interna em
 `POST /v1/control/ecac/notification-events/:eventId/deliver` e recolocar uma
 falha na fila em `POST /v1/control/ecac/notification-events/:eventId/retry`.
 Para painéis e
