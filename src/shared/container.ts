@@ -88,6 +88,17 @@ import {
   UpdateEcacNotificationPreferenceUseCase,
 } from '../modules/ecac/application/use-cases/manage-ecac-alert-notifications.js';
 import { RequestEcacSyncUseCase } from '../modules/ecac/application/use-cases/request-ecac-sync.js';
+import type { EcacMonitoringPlanRepository } from '../modules/ecac/application/ports/ecac-monitoring-plan-repository.js';
+import {
+  DeleteEcacMonitoringPlanUseCase,
+  GetEcacMonitoringPlanUseCase,
+  ListEcacMonitoringPlansUseCase,
+  PauseEcacMonitoringPlanUseCase,
+  ResumeEcacMonitoringPlanUseCase,
+  UpsertEcacMonitoringPlanUseCase,
+} from '../modules/ecac/application/use-cases/manage-ecac-monitoring-plans.js';
+import { RunEcacMonitoringUseCase } from '../modules/ecac/application/use-cases/run-ecac-monitoring.js';
+import { PrismaEcacMonitoringPlanRepository } from '../modules/ecac/infra/repositories/prisma-ecac-monitoring-plan-repository.js';
 import {
   type EcacEmailTransport,
   HttpEcacNotificationDeliveryGateway,
@@ -184,6 +195,14 @@ export interface Cradle {
   listEcacFindingsUseCase: ListEcacFindingsUseCase;
   listEcacAlertsUseCase: ListEcacAlertsUseCase;
   acknowledgeEcacAlertUseCase: AcknowledgeEcacAlertUseCase;
+  ecacMonitoringPlanRepository: EcacMonitoringPlanRepository;
+  upsertEcacMonitoringPlanUseCase: UpsertEcacMonitoringPlanUseCase;
+  listEcacMonitoringPlansUseCase: ListEcacMonitoringPlansUseCase;
+  getEcacMonitoringPlanUseCase: GetEcacMonitoringPlanUseCase;
+  pauseEcacMonitoringPlanUseCase: PauseEcacMonitoringPlanUseCase;
+  resumeEcacMonitoringPlanUseCase: ResumeEcacMonitoringPlanUseCase;
+  deleteEcacMonitoringPlanUseCase: DeleteEcacMonitoringPlanUseCase;
+  runEcacMonitoringUseCase: RunEcacMonitoringUseCase;
   ecacAlertNotificationRepository: EcacAlertNotificationRepository;
   ecacNotificationDeliveryGateway: EcacNotificationDeliveryGateway;
   ecacNotificationRetryDelayMs: number;
@@ -330,6 +349,28 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     processEcacJobsUseCase: asClass(ProcessEcacJobsUseCase).singleton(),
     listEcacFindingsUseCase: asClass(ListEcacFindingsUseCase).singleton(),
     listEcacAlertsUseCase: asClass(ListEcacAlertsUseCase).singleton(),
+    ecacMonitoringPlanRepository: asClass(
+      PrismaEcacMonitoringPlanRepository,
+    ).singleton(),
+    upsertEcacMonitoringPlanUseCase: asClass(
+      UpsertEcacMonitoringPlanUseCase,
+    ).singleton(),
+    listEcacMonitoringPlansUseCase: asClass(
+      ListEcacMonitoringPlansUseCase,
+    ).singleton(),
+    getEcacMonitoringPlanUseCase: asClass(
+      GetEcacMonitoringPlanUseCase,
+    ).singleton(),
+    pauseEcacMonitoringPlanUseCase: asClass(
+      PauseEcacMonitoringPlanUseCase,
+    ).singleton(),
+    resumeEcacMonitoringPlanUseCase: asClass(
+      ResumeEcacMonitoringPlanUseCase,
+    ).singleton(),
+    deleteEcacMonitoringPlanUseCase: asClass(
+      DeleteEcacMonitoringPlanUseCase,
+    ).singleton(),
+    runEcacMonitoringUseCase: asClass(RunEcacMonitoringUseCase).singleton(),
     acknowledgeEcacAlertUseCase: asClass(
       AcknowledgeEcacAlertUseCase,
     ).singleton(),

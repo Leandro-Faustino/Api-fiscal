@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ProcessEcacJobsResult } from '../application/use-cases/process-ecac-jobs.js';
+import type { RunEcacMonitoringResult } from '../application/use-cases/run-ecac-monitoring.js';
 import {
   EcacScheduledWorker,
   type EcacWorkerLogger,
@@ -14,10 +15,26 @@ const emptySummary: ProcessEcacJobsResult = {
   leaseLost: 0,
 };
 
+const emptyMonitoringSummary: RunEcacMonitoringResult = {
+  claimed: 0,
+  triggered: 0,
+  failed: 0,
+  paused: 0,
+  leaseLost: 0,
+};
+
 function logger(): EcacWorkerLogger {
   return {
     info: vi.fn(),
     error: vi.fn(),
+  };
+}
+
+function monitor(result: RunEcacMonitoringResult = emptyMonitoringSummary) {
+  return {
+    executeScheduled: vi.fn(
+      async (_limit: number, _lockTtlMs: number) => result,
+    ),
   };
 }
 
@@ -32,9 +49,11 @@ describe('worker agendado do Radar e-CAC', () => {
     }));
     const worker = new EcacScheduledWorker({
       processEcacJobsUseCase: { executeScheduled },
+      runEcacMonitoringUseCase: monitor(),
       logger: workerLogger,
       pollIntervalMs: 30_000,
       batchSize: 25,
+      monitoringBatchSize: 25,
       lockTtlMs: 600_000,
     });
 
@@ -62,9 +81,11 @@ describe('worker agendado do Radar e-CAC', () => {
     });
     const worker = new EcacScheduledWorker({
       processEcacJobsUseCase: { executeScheduled },
+      runEcacMonitoringUseCase: monitor(),
       logger: workerLogger,
       pollIntervalMs: 30_000,
       batchSize: 25,
+      monitoringBatchSize: 25,
       lockTtlMs: 600_000,
     });
 
@@ -90,9 +111,11 @@ describe('worker agendado do Radar e-CAC', () => {
     const executeScheduled = vi.fn(async () => pendingCycle);
     const worker = new EcacScheduledWorker({
       processEcacJobsUseCase: { executeScheduled },
+      runEcacMonitoringUseCase: monitor(),
       logger: workerLogger,
       pollIntervalMs: 30_000,
       batchSize: 25,
+      monitoringBatchSize: 25,
       lockTtlMs: 600_000,
     });
 
@@ -104,5 +127,61 @@ describe('worker agendado do Radar e-CAC', () => {
 
     expect(executeScheduled).toHaveBeenCalledTimes(1);
     expect(workerLogger.info).toHaveBeenCalledWith({}, 'ecac.worker.stopped');
+  });
+
+  it('enfileira os planos vencidos antes de processar a fila', async () => {
+    const workerLogger = logger();
+    const monitoring = monitor({
+      ...emptyMonitoringSummary,
+      claimed: 3,
+      triggered: 2,
+      failed: 1,
+    });
+    const worker = new EcacScheduledWorker({
+      processEcacJobsUseCase: { executeScheduled: vi.fn(async () => emptySummary) },
+      runEcacMonitoringUseCase: monitoring,
+      logger: workerLogger,
+      pollIntervalMs: 30_000,
+      batchSize: 25,
+      monitoringBatchSize: 10,
+      lockTtlMs: 600_000,
+    });
+
+    await expect(worker.runMonitoringCycle()).resolves.toMatchObject({
+      claimed: 3,
+      triggered: 2,
+      failed: 1,
+    });
+    expect(monitoring.executeScheduled).toHaveBeenCalledWith(10, 600_000);
+    expect(workerLogger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ triggered: 2, durationMs: expect.any(Number) }),
+      'ecac.monitor.cycle.completed',
+    );
+  });
+
+  it('mantém o processamento da fila quando o agendamento falha', async () => {
+    const workerLogger = logger();
+    const executeScheduled = vi.fn(async () => emptySummary);
+    const worker = new EcacScheduledWorker({
+      processEcacJobsUseCase: { executeScheduled },
+      runEcacMonitoringUseCase: {
+        executeScheduled: vi.fn(async () => {
+          throw new Error('falha ao reivindicar planos');
+        }),
+      },
+      logger: workerLogger,
+      pollIntervalMs: 30_000,
+      batchSize: 25,
+      monitoringBatchSize: 25,
+      lockTtlMs: 600_000,
+    });
+
+    await expect(worker.runMonitoringCycle()).resolves.toBeNull();
+    await expect(worker.runCycle()).resolves.toMatchObject({ claimed: 0 });
+    expect(workerLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ errorType: 'Error' }),
+      'ecac.monitor.cycle.failed',
+    );
+    expect(executeScheduled).toHaveBeenCalledTimes(1);
   });
 });

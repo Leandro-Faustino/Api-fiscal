@@ -2,6 +2,10 @@ import type {
   ProcessEcacJobsResult,
   ProcessEcacJobsUseCase,
 } from '../../application/use-cases/process-ecac-jobs.js';
+import type {
+  RunEcacMonitoringResult,
+  RunEcacMonitoringUseCase,
+} from '../../application/use-cases/run-ecac-monitoring.js';
 
 export type EcacWorkerLogContext = Record<
   string,
@@ -15,9 +19,11 @@ export interface EcacWorkerLogger {
 
 interface Dependencies {
   processEcacJobsUseCase: Pick<ProcessEcacJobsUseCase, 'executeScheduled'>;
+  runEcacMonitoringUseCase: Pick<RunEcacMonitoringUseCase, 'executeScheduled'>;
   logger: EcacWorkerLogger;
   pollIntervalMs: number;
   batchSize: number;
+  monitoringBatchSize: number;
   lockTtlMs: number;
 }
 
@@ -55,24 +61,63 @@ function safeErrorContext(error: unknown): EcacWorkerLogContext {
 
 export class EcacScheduledWorker {
   private readonly processor: Pick<ProcessEcacJobsUseCase, 'executeScheduled'>;
+  private readonly monitor: Pick<RunEcacMonitoringUseCase, 'executeScheduled'>;
   private readonly logger: EcacWorkerLogger;
   private readonly pollIntervalMs: number;
   private readonly batchSize: number;
+  private readonly monitoringBatchSize: number;
   private readonly lockTtlMs: number;
   private controller: AbortController | null = null;
 
   public constructor({
     processEcacJobsUseCase,
+    runEcacMonitoringUseCase,
     logger,
     pollIntervalMs,
     batchSize,
+    monitoringBatchSize,
     lockTtlMs,
   }: Dependencies) {
     this.processor = processEcacJobsUseCase;
+    this.monitor = runEcacMonitoringUseCase;
     this.logger = logger;
     this.pollIntervalMs = pollIntervalMs;
     this.batchSize = batchSize;
+    this.monitoringBatchSize = monitoringBatchSize;
     this.lockTtlMs = lockTtlMs;
+  }
+
+  /**
+   * Enfileira os planos vencidos antes de processar a fila.
+   *
+   * Uma falha aqui não pode impedir o processamento dos jobs já enfileirados,
+   * por isso o ciclo continua mesmo quando o agendamento falha.
+   */
+  public async runMonitoringCycle(): Promise<RunEcacMonitoringResult | null> {
+    const startedAt = Date.now();
+    try {
+      const result = await this.monitor.executeScheduled(
+        this.monitoringBatchSize,
+        this.lockTtlMs,
+      );
+      this.logger.info(
+        {
+          ...result,
+          durationMs: Date.now() - startedAt,
+        },
+        'ecac.monitor.cycle.completed',
+      );
+      return result;
+    } catch (error: unknown) {
+      this.logger.error(
+        {
+          ...safeErrorContext(error),
+          durationMs: Date.now() - startedAt,
+        },
+        'ecac.monitor.cycle.failed',
+      );
+      return null;
+    }
   }
 
   public async runCycle(): Promise<ProcessEcacJobsResult | null> {
@@ -113,6 +158,7 @@ export class EcacScheduledWorker {
       {
         pollIntervalMs: this.pollIntervalMs,
         batchSize: this.batchSize,
+        monitoringBatchSize: this.monitoringBatchSize,
         lockTtlMs: this.lockTtlMs,
       },
       'ecac.worker.started',
@@ -120,6 +166,7 @@ export class EcacScheduledWorker {
 
     try {
       while (!controller.signal.aborted) {
+        await this.runMonitoringCycle();
         await this.runCycle();
         await wait(this.pollIntervalMs, controller.signal);
       }

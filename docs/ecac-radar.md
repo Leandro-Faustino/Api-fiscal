@@ -72,6 +72,49 @@ resposta antiga termina depois de uma nova. A reconciliação usa um lock
 transacional do PostgreSQL por fluxo; a conclusão do job, os achados, os alertas
 e o cursor são gravados atomicamente.
 
+## Monitoramento recorrente
+
+O lote manual resolve a consulta pontual, não a promessa do plano. Um plano de
+monitoramento por empresa e tipo de consulta é configurado em
+`PUT /v1/control/ecac/monitoring-plans`, com intervalo em minutos, tentativas
+máximas por job e data inicial opcional. A configuração é única por
+escritório, empresa e tipo de consulta: reenviar o mesmo par atualiza o plano
+existente, reativa o que estava pausado e zera o contador de falhas.
+
+A procuração, o certificado e o escopo de CNPJ são validados no momento da
+configuração — um plano nunca nasce apontando para uma autorização inválida.
+
+Os planos são listados em `GET /v1/control/ecac/monitoring-plans`, com filtros
+por empresa, tipo de consulta e situação, e consultados individualmente em
+`GET /v1/control/ecac/monitoring-plans/:planId`. Um plano pode ser pausado em
+`POST /v1/control/ecac/monitoring-plans/:planId/pause`, retomado em
+`.../resume` e removido com `DELETE`. Todas as transições são auditadas.
+
+O agendador roda no mesmo processo do worker e-CAC, antes de cada ciclo de
+processamento da fila:
+
+- reivindica os planos vencidos globalmente com `FOR UPDATE SKIP LOCKED` e um
+  token de posse por ciclo;
+- cria um lote de um alvo por plano, com chave idempotente derivada do plano e
+  da janela agendada (`monitor:<planId>:<janela>`), de modo que dois agendadores
+  na mesma janela produzem o mesmo lote;
+- avança `nextRunAt` em múltiplos inteiros do intervalo até passar do horário
+  atual. Uma indisponibilidade longa **não** vira rajada de consultas
+  retroativas, e o horário escolhido pelo contador é preservado;
+- grava o lote, a agenda e a auditoria somente se o token de posse ainda for o
+  atual;
+- em falha, registra o código sanitizado, incrementa o contador e adia para a
+  próxima janela. Depois de cinco falhas consecutivas o plano é pausado
+  automaticamente, com auditoria `ecac.monitoring_plan.auto_paused`.
+
+Uma falha do agendamento não impede o processamento da fila: os dois ciclos são
+independentes e cada um registra apenas contadores e duração.
+
+O autor do lote automático é o usuário que configurou o plano, o que preserva a
+trilha de responsabilidade profissional. Consultas com autorização vencida
+falham no próprio momento da criação do lote — o Radar nunca consulta o portal
+com procuração inválida.
+
 ## Privacidade e segurança
 
 - O `tenantId` sempre vem do JWT.
@@ -85,12 +128,12 @@ e o cursor são gravados atomicamente.
 
 ## Permissões
 
-| Papel | Consultar | Solicitar lote | Processar manualmente |
-|---|---:|---:|---:|
-| `OWNER` | Sim | Sim | Sim |
-| `ADMIN` | Sim | Sim | Sim |
-| `ACCOUNTANT` | Sim | Sim | Não |
-| `VIEWER` | Sim | Não | Não |
+| Papel | Consultar | Solicitar lote | Configurar monitoramento | Processar manualmente |
+|---|---:|---:|---:|---:|
+| `OWNER` | Sim | Sim | Sim | Sim |
+| `ADMIN` | Sim | Sim | Sim | Sim |
+| `ACCOUNTANT` | Sim | Sim | Sim | Não |
+| `VIEWER` | Sim | Não | Não | Não |
 
 O endpoint manual de processamento permanece como fallback administrativo. O
 processamento normal em produção é feito por um processo separado:
@@ -102,7 +145,9 @@ npm run start:ecac-worker
 O worker reivindica jobs vencidos globalmente, sem retirar o `tenantId` das
 operações seguintes. O lote máximo, o intervalo e o TTL da posse são definidos
 por `ECAC_WORKER_BATCH_SIZE`, `ECAC_WORKER_POLL_INTERVAL_MS` e
-`ECAC_WORKER_LOCK_TTL_MS`.
+`ECAC_WORKER_LOCK_TTL_MS`. O mesmo processo enfileira os planos de
+monitoramento vencidos, no máximo `ECAC_MONITORING_BATCH_SIZE` por ciclo,
+reaproveitando o TTL de posse do worker.
 
 Cada reivindicação recebe um token aleatório. Conclusão, adiamento, falha e
 checkpoint SITFIS só são persistidos se o token ainda for o atual. Isso permite
@@ -110,9 +155,11 @@ recuperar jobs abandonados sem aceitar a conclusão atrasada de outro processo.
 Os ciclos nunca se sobrepõem dentro da mesma instância, e `SIGINT`/`SIGTERM`
 interrompem novas consultas depois que o ciclo atual termina.
 
-Os logs do worker são JSON por linha e contêm apenas duração e contadores
-(`claimed`, `succeeded`, `deferred`, `retryScheduled`, `failed` e `leaseLost`).
-Mensagens internas de banco ou do provedor não são registradas.
+Os logs do worker são JSON por linha e contêm apenas duração e contadores. O
+ciclo da fila registra `claimed`, `succeeded`, `deferred`, `retryScheduled`,
+`failed` e `leaseLost`; o ciclo de agendamento registra `claimed`, `triggered`,
+`failed`, `paused` e `leaseLost`. Mensagens internas de banco ou do provedor não
+são registradas.
 
 ## Adaptador Integra Contador
 

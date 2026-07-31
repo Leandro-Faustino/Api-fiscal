@@ -61,9 +61,30 @@ O plano Control é grande demais para uma única entrega. A implementação ser�
 - Detecção transacional de mudanças por empresa e tipo de consulta.
 - Alertas deduplicados com ciclo `NEW`, `CHANGED`, `RESOLVED` e `REOPENED`.
 - Reconhecimento auditado e proteção contra respostas concluídas fora de ordem.
+- Preferências, caixa de saída, worker e envio HTTP dos alertas por canal.
+- Monitoramento recorrente por empresa e tipo de consulta, com disparo
+  automático idempotente por janela agendada e pausa após falhas consecutivas.
+
+## O que falta para encerrar a etapa 2 (F03)
+
+O ciclo operacional está fechado: agendar, consultar, comparar, alertar e
+notificar. O que resta é **cobertura de consulta**, e cada item depende de fonte
+externa que ainda não foi selecionada.
+
+| Lacuna | Situação | Bloqueio |
+|---|---|---|
+| Situação cadastral, certidões federais/estaduais/municipais/trabalhistas, malha fiscal, e-processos, PRONAMPE | Sem tipo de consulta nem adaptador | Definir o serviço oficial de cada consulta antes de codificar o `queryType` |
+| `DEBTS` | Tipo existe, adaptador recusa | Mesmo bloqueio |
+| Caixa Postal | Apenas o indicador de novas mensagens | Listagem e detalhe da intimação exigem os serviços de mensagem correspondentes |
+| Autentica-Procurador | Não iniciado | Terceiro caminho de acesso previsto em F04 |
+| Cofre documental do relatório SITFIS | PDF é reduzido a hash e descartado | Depende de F02 (etapa 1) |
+
+Cada novo `queryType` reaproveita fila, mudanças, alertas, notificações e
+agendamento sem alteração estrutural: entra um adaptador e um valor de enum.
 
 ## Próxima entrega recomendada
 
-Conectar os alertas do Radar aos canais de notificação e às preferências dos
-responsáveis contábeis. Em paralelo, conectar o keyring a KMS/HSM e substituir
-o rate limiting em memória por Redis antes da escala horizontal.
+Selecionar e implementar os serviços oficiais das consultas faltantes do F03,
+começando por situação cadastral e certidões — são as que sustentam a promessa
+"nada vence sem você saber". Em paralelo, conectar o keyring a KMS/HSM e
+substituir o rate limiting em memória por Redis antes da escala horizontal.

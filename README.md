@@ -36,6 +36,9 @@ API em Node.js/TypeScript para a plataforma de gestão fiscal e inteligência co
 - SITFIS 2.0 persistente com protocolo cifrado, espera orientada pelo provedor e
   descarte do PDF após hash seguro
 - preferências, caixa de saída, worker e envio HTTP configurável para alertas e-CAC
+- monitoramento recorrente por empresa e consulta, com disparo automático
+  idempotente, avanço de agenda sem rajada retroativa e pausa após falhas
+  consecutivas
 - tabela inicial de parâmetros fiscais por vigência (RNF-03)
 - testes unitários com Vitest
 
@@ -75,6 +78,7 @@ export AUTH_RATE_LIMIT_WINDOW_MS=60000
 export SERPRO_AUTH_URL=https://autenticacao.sapi.serpro.gov.br/authenticate
 export SERPRO_API_BASE_URL=https://gateway.apiserpro.serpro.gov.br/integra-contador/v1
 export SERPRO_TIMEOUT_MS=15000
+export ECAC_MONITORING_BATCH_SIZE=25
 export ECAC_EMAIL_PROVIDER=disabled
 export ECAC_EMAIL_HTTP_URL=
 export ECAC_EMAIL_HTTP_AUTHORIZATION=
@@ -161,6 +165,12 @@ mensagens da Caixa Postal. As
   consultas `TAX_STATUS` usam o orquestrador SITFIS persistente; `DEBTS` ainda
   aguarda o adaptador oficial correspondente.
 
+Para não depender de solicitação manual, configure o monitoramento recorrente em
+`PUT /v1/control/ecac/monitoring-plans`, com empresa, procuração, tipo de
+consulta e intervalo em minutos. O worker e-CAC enfileira os planos vencidos a
+cada ciclo, com chave idempotente por janela agendada, e pausa automaticamente o
+plano após cinco falhas consecutivas.
+
 Depois de ativar uma nova chave do cofre, recifre a Consumer Key e a Consumer
 Secret em `POST /v1/control/ecac/serpro-connection/rotate-key`. A operação é
 idempotente, auditada e protegida contra atualização concorrente.
@@ -193,10 +203,15 @@ unitários, testes de integração, checagem de tipos e build.
 - O primeiro adaptador do cofre usa um keyring fornecido por variáveis de ambiente.
   Antes de armazenar certificados reais em produção, trocar esse adaptador por
   KMS/HSM com controle de acesso da infraestrutura.
+- O Radar cobre hoje `TAX_STATUS` e `MAILBOX`. Situação cadastral, certidões,
+  malha fiscal, e-processos, PRONAMPE e `DEBTS` dependem da seleção dos serviços
+  oficiais correspondentes e ainda não têm adaptador.
+- A consulta de Caixa Postal devolve apenas o indicador de novas mensagens; a
+  listagem e o detalhe das intimações ainda serão conectados.
 - O adaptador Integra Contador já autentica com mTLS, consulta o indicador de
   novas mensagens da Caixa Postal e executa o fluxo persistente do SITFIS.
-  O worker agendado processa a fila global com lease por token e desligamento
-  gracioso. O worker de notificações já entrega alertas internos e pode enviar
+  O worker agendado enfileira os planos de monitoramento vencidos e processa a
+  fila global com lease por token e desligamento gracioso. O worker de notificações já entrega alertas internos e pode enviar
   alertas e-CAC por API HTTP de e-mail quando configurado. Autentica-Procurador ainda será
   conectado.
 - A BrasilAPI é o primeiro adaptador de consulta cadastral, não uma garantia de fonte oficial ou SLA de produção.

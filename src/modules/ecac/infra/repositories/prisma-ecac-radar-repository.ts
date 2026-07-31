@@ -27,7 +27,10 @@ import type {
   EcacSyncBatch,
   EcacSyncBatchStatus,
 } from '../../domain/ecac-radar.js';
-import { fingerprintEcacFinding } from '../../domain/ecac-radar.js';
+import {
+  fingerprintEcacFinding,
+  powerOfAttorneyAllowsQuery,
+} from '../../domain/ecac-radar.js';
 
 interface Dependencies {
   prismaClient: PrismaClient;
@@ -127,15 +130,6 @@ function toBatch(row: BatchRow): EcacSyncBatch {
   };
 }
 
-function serviceAllowsQuery(services: string[], queryType: EcacQueryType): boolean {
-  const normalized = new Set(services.map((service) => service.trim().toUpperCase()));
-  return (
-    normalized.has('ECAC') ||
-    normalized.has('INTEGRA_CONTADOR') ||
-    normalized.has(queryType)
-  );
-}
-
 const severityRank: Record<EcacFindingSeverity, number> = {
   INFO: 0,
   WARNING: 1,
@@ -229,7 +223,7 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
           authority.status === 'ACTIVE' &&
           authority.validFrom <= input.now &&
           authority.validUntil >= input.now &&
-          serviceAllowsQuery(authority.services, input.queryType) &&
+          powerOfAttorneyAllowsQuery(authority.services, input.queryType) &&
           certificate?.status === 'ACTIVE' &&
           certificate.validFrom <= input.now &&
           certificate.validUntil >= input.now &&
@@ -482,7 +476,10 @@ export class PrismaEcacRadarRepository implements EcacRadarRepository {
             row.powerOfAttorney.validUntil >= now &&
             row.powerOfAttorney.companyId === row.companyId &&
             row.powerOfAttorney.certificateId === row.certificateId &&
-            serviceAllowsQuery(row.powerOfAttorney.services, row.queryType) &&
+            powerOfAttorneyAllowsQuery(
+              row.powerOfAttorney.services,
+              row.queryType,
+            ) &&
             row.certificate.status === 'ACTIVE' &&
             row.certificate.validFrom <= now &&
             row.certificate.validUntil >= now &&

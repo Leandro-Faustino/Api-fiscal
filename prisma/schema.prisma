@@ -135,6 +135,11 @@ enum EcacNotificationEventStatus {
   FAILED
 }
 
+enum EcacMonitoringPlanStatus {
+  ACTIVE
+  PAUSED
+}
+
 enum SerproConnectionStatus {
   ACTIVE
   REVOKED
@@ -166,6 +171,7 @@ model Tenant {
   ecacNotificationEvents EcacAlertNotificationEvent[]
   ecacObservationCursors EcacObservationCursor[]
   ecacSitfisProcesses    EcacSitfisProcess[]
+  ecacMonitoringPlans    EcacMonitoringPlan[]
   serproConnection       SerproConnection?
   auditLogs              AuditLog[]
   createdAt              DateTime                @default(now()) @map("created_at")
@@ -196,6 +202,7 @@ model User {
   acknowledgedAlerts          CredentialAlert[]    @relation("CredentialAlertAcknowledgedBy")
   requestedEcacBatches        EcacSyncBatch[]      @relation("EcacBatchRequester")
   acknowledgedEcacAlerts      EcacAlert[]          @relation("EcacAlertAcknowledgedBy")
+  createdEcacMonitoringPlans  EcacMonitoringPlan[] @relation("EcacMonitoringPlanCreator")
   ecacNotificationPrefs       EcacAlertNotificationPreference[]
   ecacNotificationEvents      EcacAlertNotificationEvent[]
   configuredSerproConnections SerproConnection[]   @relation("SerproConnectionConfigurer")
@@ -334,6 +341,7 @@ model Company {
   ecacAlerts             EcacAlert[]
   ecacObservationCursors EcacObservationCursor[]
   ecacSitfisProcesses    EcacSitfisProcess[]
+  ecacMonitoringPlans    EcacMonitoringPlan[]
 
   @@unique([tenantId, cnpj])
   @@unique([tenantId, id])
@@ -433,6 +441,7 @@ model PowerOfAttorney {
   createdBy         User                  @relation("PowerOfAttorneyCreator", fields: [createdById], references: [id])
   alerts            CredentialAlert[]
   ecacSyncJobs      EcacSyncJob[]
+  ecacMonitoringPlans EcacMonitoringPlan[]
   createdAt         DateTime              @default(now()) @map("created_at")
   updatedAt         DateTime              @updatedAt @map("updated_at")
 
@@ -695,6 +704,40 @@ model EcacObservationCursor {
   @@id([tenantId, companyId, queryType])
   @@index([latestJobId])
   @@map("ecac_observation_cursors")
+}
+
+model EcacMonitoringPlan {
+  id                  String                   @id @default(uuid()) @db.Uuid
+  tenantId            String                   @map("tenant_id") @db.Uuid
+  companyId           String                   @map("company_id") @db.Uuid
+  powerOfAttorneyId   String                   @map("power_of_attorney_id") @db.Uuid
+  queryType           EcacQueryType            @map("query_type")
+  status              EcacMonitoringPlanStatus @default(ACTIVE)
+  intervalMinutes     Int                      @map("interval_minutes")
+  maxAttempts         Int                      @default(5) @map("max_attempts")
+  nextRunAt           DateTime                 @map("next_run_at")
+  lastRunAt           DateTime?                @map("last_run_at")
+  lastBatchId         String?                  @map("last_batch_id") @db.Uuid
+  lastFailureAt       DateTime?                @map("last_failure_at")
+  lastFailureCode     String?                  @map("last_failure_code")
+  consecutiveFailures Int                      @default(0) @map("consecutive_failures")
+  triggeredRuns       Int                      @default(0) @map("triggered_runs")
+  lockedAt            DateTime?                @map("locked_at")
+  lockToken           String?                  @map("lock_token") @db.Uuid
+  createdById         String                   @map("created_by_id") @db.Uuid
+  tenant              Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company             Company                  @relation(fields: [tenantId, companyId], references: [tenantId, id], onDelete: Cascade)
+  powerOfAttorney     PowerOfAttorney          @relation(fields: [tenantId, companyId, powerOfAttorneyId], references: [tenantId, companyId, id], onDelete: Restrict, map: "ecac_monitoring_plans_power_of_attorney_fkey")
+  createdBy           User                     @relation("EcacMonitoringPlanCreator", fields: [createdById], references: [id])
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  updatedAt           DateTime                 @updatedAt @map("updated_at")
+
+  @@unique([tenantId, companyId, queryType])
+  @@unique([tenantId, id])
+  @@index([status, nextRunAt])
+  @@index([tenantId, status, nextRunAt])
+  @@index([lockedAt])
+  @@map("ecac_monitoring_plans")
 }
 
 model SerproConnection {

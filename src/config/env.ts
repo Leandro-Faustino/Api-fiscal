@@ -54,6 +54,12 @@ const envSchema = z
       .max(300_000)
       .default(30_000),
     ECAC_WORKER_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(25),
+    ECAC_MONITORING_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(25),
     ECAC_WORKER_LOCK_TTL_MS: z.coerce
       .number()
       .int()

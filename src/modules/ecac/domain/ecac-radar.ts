@@ -220,6 +220,24 @@ export interface ClaimedEcacJob {
   authorizationValid: boolean;
 }
 
+/**
+ * A procuração habilita a consulta quando cobre o e-CAC como um todo ou o tipo
+ * de consulta específico. A comparação ignora caixa e espaços do cadastro.
+ */
+export function powerOfAttorneyAllowsQuery(
+  services: string[],
+  queryType: EcacQueryType,
+): boolean {
+  const declared = new Set(
+    services.map((service) => service.trim().toUpperCase()),
+  );
+  return (
+    declared.has('ECAC') ||
+    declared.has('INTEGRA_CONTADOR') ||
+    declared.has(queryType)
+  );
+}
+
 export const ecacQueryTypes: readonly EcacQueryType[] = [
   'TAX_STATUS',
   'DEBTS',

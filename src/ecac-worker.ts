@@ -9,9 +9,11 @@ const container = createApplicationContainer(env, prisma);
 const logger = new JsonLineWorkerLogger();
 const worker = new EcacScheduledWorker({
   processEcacJobsUseCase: container.cradle.processEcacJobsUseCase,
+  runEcacMonitoringUseCase: container.cradle.runEcacMonitoringUseCase,
   logger,
   pollIntervalMs: env.ECAC_WORKER_POLL_INTERVAL_MS,
   batchSize: env.ECAC_WORKER_BATCH_SIZE,
+  monitoringBatchSize: env.ECAC_MONITORING_BATCH_SIZE,
   lockTtlMs: env.ECAC_WORKER_LOCK_TTL_MS,
 });
 

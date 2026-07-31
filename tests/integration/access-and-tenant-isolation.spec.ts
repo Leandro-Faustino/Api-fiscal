@@ -58,6 +58,7 @@ const env: Env = {
   SERPRO_TIMEOUT_MS: 1_000,
   ECAC_WORKER_POLL_INTERVAL_MS: 30_000,
   ECAC_WORKER_BATCH_SIZE: 25,
+  ECAC_MONITORING_BATCH_SIZE: 25,
   ECAC_WORKER_LOCK_TTL_MS: 600_000,
   ECAC_NOTIFICATION_WORKER_POLL_INTERVAL_MS: 30_000,
   ECAC_NOTIFICATION_WORKER_BATCH_SIZE: 25,
@@ -107,6 +108,7 @@ interface MfaSetupResponse {
 
 async function cleanDatabase(): Promise<void> {
   await prisma.auditLog.deleteMany();
+  await prisma.ecacMonitoringPlan.deleteMany();
   await prisma.ecacAlertNotificationEvent.deleteMany();
   await prisma.ecacAlertNotificationPreference.deleteMany();
   await prisma.ecacObservationCursor.deleteMany();
@@ -1265,6 +1267,154 @@ describe('autenticação e isolamento multiempresa', () => {
       lastFailureCode: null,
     });
 
+    await app.close();
+  });
+
+  it('enfileira o monitoramento recorrente uma vez por janela e isola o escritório', async () => {
+    const app = await createTestApp();
+    const tenantA = await registerOwner(app, 'MonitorA');
+    const tenantB = await registerOwner(app, 'MonitorB');
+
+    const companyResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/control/companies',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: { cnpj: registryData.cnpj },
+    });
+    expect(companyResponse.statusCode).toBe(201);
+    const company = companyResponse.json<{ id: string }>();
+
+    const fixture = createTestPkcs12();
+    const upload = await app.inject({
+      method: 'POST',
+      url: '/v1/control/credentials/certificates/a1',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: {
+        label: 'A1 Monitoramento',
+        pfxBase64: fixture.base64,
+        password: fixture.password,
+        companyIds: [company.id],
+      },
+    });
+    expect(upload.statusCode).toBe(201);
+    const certificate = upload.json<{ id: string }>();
+
+    const assignment = await app.inject({
+      method: 'POST',
+      url: `/v1/control/credentials/companies/${company.id}/responsibles`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: { membershipId: tenantA.session.membershipId, role: 'PRIMARY' },
+    });
+    expect(assignment.statusCode).toBe(201);
+    const responsible = assignment.json<{ id: string }>();
+
+    const now = Date.now();
+    const powerResponse = await app.inject({
+      method: 'POST',
+      url: '/v1/control/credentials/powers-of-attorney',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: {
+        companyId: company.id,
+        responsibleId: responsible.id,
+        certificateId: certificate.id,
+        label: 'Procuração Monitoramento',
+        services: ['ECAC'],
+        validFrom: new Date(now - 24 * 60 * 60 * 1_000).toISOString().slice(0, 10),
+        validUntil: new Date(now + 30 * 24 * 60 * 60 * 1_000)
+          .toISOString()
+          .slice(0, 10),
+      },
+    });
+    expect(powerResponse.statusCode).toBe(201);
+    const power = powerResponse.json<{ id: string }>();
+
+    const planResponse = await app.inject({
+      method: 'PUT',
+      url: '/v1/control/ecac/monitoring-plans',
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+      payload: {
+        companyId: company.id,
+        powerOfAttorneyId: power.id,
+        queryType: 'MAILBOX',
+        intervalMinutes: 1_440,
+      },
+    });
+    expect(planResponse.statusCode).toBe(200);
+    const plan = planResponse.json<{ id: string; status: string }>();
+    expect(plan.status).toBe('ACTIVE');
+
+    const container = createApplicationContainer(env, prisma);
+    const firstCycle =
+      await container.cradle.runEcacMonitoringUseCase.executeScheduled(
+        env.ECAC_MONITORING_BATCH_SIZE,
+        env.ECAC_WORKER_LOCK_TTL_MS,
+      );
+    expect(firstCycle).toEqual({
+      claimed: 1,
+      triggered: 1,
+      failed: 0,
+      paused: 0,
+      leaseLost: 0,
+    });
+    expect(await prisma.ecacSyncBatch.count()).toBe(1);
+
+    const secondCycle =
+      await container.cradle.runEcacMonitoringUseCase.executeScheduled(
+        env.ECAC_MONITORING_BATCH_SIZE,
+        env.ECAC_WORKER_LOCK_TTL_MS,
+      );
+    expect(secondCycle).toMatchObject({ claimed: 0, triggered: 0 });
+    expect(await prisma.ecacSyncBatch.count()).toBe(1);
+
+    const advanced = await prisma.ecacMonitoringPlan.findUniqueOrThrow({
+      where: { id: plan.id },
+    });
+    expect(advanced.triggeredRuns).toBe(1);
+    expect(advanced.lockToken).toBeNull();
+    expect(advanced.lastBatchId).not.toBeNull();
+    expect(advanced.nextRunAt.getTime()).toBeGreaterThan(Date.now());
+
+    const paused = await app.inject({
+      method: 'POST',
+      url: `/v1/control/ecac/monitoring-plans/${plan.id}/pause`,
+      headers: { authorization: `Bearer ${tenantA.accessToken}` },
+    });
+    expect(paused.statusCode).toBe(200);
+    expect(paused.json()).toMatchObject({ status: 'PAUSED' });
+
+    await prisma.ecacMonitoringPlan.update({
+      where: { id: plan.id },
+      data: { nextRunAt: new Date(Date.now() - 1_000) },
+    });
+    const pausedCycle =
+      await container.cradle.runEcacMonitoringUseCase.executeScheduled(
+        env.ECAC_MONITORING_BATCH_SIZE,
+        env.ECAC_WORKER_LOCK_TTL_MS,
+      );
+    expect(pausedCycle).toMatchObject({ claimed: 0 });
+    expect(await prisma.ecacSyncBatch.count()).toBe(1);
+
+    const crossTenantList = await app.inject({
+      method: 'GET',
+      url: '/v1/control/ecac/monitoring-plans',
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
+    const crossTenantRead = await app.inject({
+      method: 'GET',
+      url: `/v1/control/ecac/monitoring-plans/${plan.id}`,
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
+    const crossTenantDelete = await app.inject({
+      method: 'DELETE',
+      url: `/v1/control/ecac/monitoring-plans/${plan.id}`,
+      headers: { authorization: `Bearer ${tenantB.accessToken}` },
+    });
+    expect(crossTenantList.json()).toEqual([]);
+    expect(crossTenantRead.statusCode).toBe(404);
+    expect(crossTenantDelete.statusCode).toBe(404);
+    expect(await prisma.ecacMonitoringPlan.count()).toBe(1);
+
+    await container.dispose();
     await app.close();
   });
 });
