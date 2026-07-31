@@ -25,6 +25,7 @@ interface Dependencies {
   serproAuthUrl: string;
   serproApiBaseUrl: string;
   serproTimeoutMs: number;
+  serproTrialBearer: string;
 }
 
 interface TokenSet {
@@ -167,6 +168,7 @@ export class SerproIntegraContadorGateway implements EcacGateway {
   private readonly authUrl: string;
   private readonly apiBaseUrl: string;
   private readonly timeoutMs: number;
+  private readonly trialBearer: string;
   private readonly tokenCache = new Map<string, TokenSet>();
   private readonly authenticationInFlight = new Map<string, Promise<TokenSet>>();
 
@@ -178,6 +180,7 @@ export class SerproIntegraContadorGateway implements EcacGateway {
     serproAuthUrl,
     serproApiBaseUrl,
     serproTimeoutMs,
+    serproTrialBearer,
   }: Dependencies) {
     this.repository = serproConnectionRepository;
     this.sitfisRepository = ecacSitfisProcessRepository;
@@ -186,6 +189,22 @@ export class SerproIntegraContadorGateway implements EcacGateway {
     this.authUrl = serproAuthUrl;
     this.apiBaseUrl = serproApiBaseUrl.replace(/\/+$/u, '');
     this.timeoutMs = serproTimeoutMs;
+    this.trialBearer = serproTrialBearer;
+  }
+
+  /**
+   * Cabeçalhos da consulta.
+   *
+   * O ambiente de demonstração do Integra Contador aceita um Bearer fixo e não
+   * exige `jwt_token`. Fora dele, o cabeçalho é sempre enviado.
+   */
+  private queryHeaders(tokens: TokenSet): Record<string, string> {
+    return {
+      accept: 'application/json',
+      authorization: `Bearer ${tokens.accessToken}`,
+      'content-type': 'application/json',
+      ...(tokens.jwtToken ? { jwt_token: tokens.jwtToken } : {}),
+    };
   }
 
   public async query(input: QueryEcacInput): Promise<EcacGatewayResult> {
@@ -224,7 +243,7 @@ export class SerproIntegraContadorGateway implements EcacGateway {
     try {
       let tokens = await this.getTokens(material, input, cacheKey, false);
       response = await this.requestMailbox(material, input, tokens);
-      if (response.status === 401) {
+      if (response.status === 401 && !this.trialBearer) {
         this.tokenCache.delete(cacheKey);
         tokens = await this.getTokens(material, input, cacheKey, true);
         response = await this.requestMailbox(material, input, tokens);
@@ -297,6 +316,14 @@ export class SerproIntegraContadorGateway implements EcacGateway {
     cacheKey: string,
     forceRefresh: boolean,
   ): Promise<TokenSet> {
+    if (this.trialBearer) {
+      return {
+        accessToken: this.trialBearer,
+        jwtToken: '',
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      };
+    }
+
     const cached = this.tokenCache.get(cacheKey);
     if (!forceRefresh && cached && cached.expiresAt > Date.now() + 30_000) {
       return cached;
@@ -515,7 +542,7 @@ export class SerproIntegraContadorGateway implements EcacGateway {
   ): Promise<SerproHttpResponse> {
     let tokens = await this.getTokens(material, input, cacheKey, false);
     let response = await request(tokens);
-    if (response.status === 401) {
+    if (response.status === 401 && !this.trialBearer) {
       this.tokenCache.delete(cacheKey);
       tokens = await this.getTokens(material, input, cacheKey, true);
       response = await request(tokens);
@@ -586,12 +613,7 @@ export class SerproIntegraContadorGateway implements EcacGateway {
       return await this.transport.request({
         url: `${this.apiBaseUrl}${path}`,
         method: 'POST',
-        headers: {
-          accept: 'application/json',
-          authorization: `Bearer ${tokens.accessToken}`,
-          'content-type': 'application/json',
-          jwt_token: tokens.jwtToken,
-        },
+        headers: this.queryHeaders(tokens),
         body: JSON.stringify({
           contratante: {
             numero: material.contractorCnpj,
@@ -885,12 +907,7 @@ export class SerproIntegraContadorGateway implements EcacGateway {
       return await this.transport.request({
         url: `${this.apiBaseUrl}/Consultar`,
         method: 'POST',
-        headers: {
-          accept: 'application/json',
-          authorization: `Bearer ${tokens.accessToken}`,
-          'content-type': 'application/json',
-          jwt_token: tokens.jwtToken,
-        },
+        headers: this.queryHeaders(tokens),
         body,
         timeoutMs: this.timeoutMs,
       });

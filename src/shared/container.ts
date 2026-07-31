@@ -184,6 +184,7 @@ export interface Cradle {
   serproAuthUrl: string;
   serproApiBaseUrl: string;
   serproTimeoutMs: number;
+  serproTrialBearer: string;
   configureSerproConnectionUseCase: ConfigureSerproConnectionUseCase;
   getSerproConnectionUseCase: GetSerproConnectionUseCase;
   rotateSerproConnectionKeyUseCase: RotateSerproConnectionKeyUseCase;
@@ -324,6 +325,7 @@ export function createApplicationContainer(env: Env, prismaClient: PrismaClient)
     rotateSerproConnectionKeyUseCase: asClass(
       RotateSerproConnectionKeyUseCase,
     ).singleton(),
+    serproTrialBearer: asValue(env.SERPRO_TRIAL_BEARER),
     ecacGateway: asClass(SerproIntegraContadorGateway).singleton(),
     ecacRadarRepository: asClass(PrismaEcacRadarRepository).singleton(),
     ecacAlertNotificationRepository: asClass(

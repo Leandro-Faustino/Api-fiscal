@@ -71,20 +71,31 @@ O ciclo operacional está fechado: agendar, consultar, comparar, alertar e
 notificar. O que resta é **cobertura de consulta**, e cada item depende de fonte
 externa que ainda não foi selecionada.
 
-| Lacuna | Situação | Bloqueio |
+| Lacuna | Fonte | Bloqueio |
 |---|---|---|
-| Situação cadastral, certidões federais/estaduais/municipais/trabalhistas, malha fiscal, e-processos, PRONAMPE | Sem tipo de consulta nem adaptador | Definir o serviço oficial de cada consulta antes de codificar o `queryType` |
-| `DEBTS` | Tipo existe, adaptador recusa | Mesmo bloqueio |
-| Caixa Postal | Apenas o indicador de novas mensagens | Listagem e detalhe da intimação exigem os serviços de mensagem correspondentes |
-| Autentica-Procurador | Não iniciado | Terceiro caminho de acesso previsto em F04 |
-| Cofre documental do relatório SITFIS | PDF é reduzido a hash e descartado | Depende de F02 (etapa 1) |
+| Caixa Postal completa (lista e detalhe da intimação) | Integra Caixa Postal, `MSGCONTRIBUINTE61` e `OBTERMSG62` | Nenhum além de conferir o contrato dos serviços |
+| e-Processos | Integra e-Processo, `CONSPROCPORINTER271` | Idem |
+| Certidões federais | API Consulta CND — **produto separado do SERPRO** | Contratação e adaptador próprios |
+| Certidões estaduais, municipais e trabalhistas | Fontes por UF, município e TST | Sem fonte única; decisão de escopo de produto |
+| Malha fiscal e PRONAMPE | Sem serviço localizado no catálogo | Rever a promessa ou identificar a fonte |
+| `DEBTS` | O relatório do SITFIS é o mais próximo, em PDF | Extração estruturada de PDF, ou outra fonte |
+| Autentica-Procurador | Integra Procurações | Terceiro caminho de acesso previsto em F04 |
+| Cofre documental do relatório SITFIS | — | Depende de F02 (etapa 1) |
 
 Cada novo `queryType` reaproveita fila, mudanças, alertas, notificações e
 agendamento sem alteração estrutural: entra um adaptador e um valor de enum.
 
+O levantamento do catálogo, o que fica fora dele e as três camadas de teste
+(duplo de transporte, ambiente de demonstração e contrato real) estão em
+[docs/integra-contador-catalogo.md](integra-contador-catalogo.md).
+
 ## Próxima entrega recomendada
 
-Selecionar e implementar os serviços oficiais das consultas faltantes do F03,
-começando por situação cadastral e certidões — são as que sustentam a promessa
-"nada vence sem você saber". Em paralelo, conectar o keyring a KMS/HSM e
-substituir o rate limiting em memória por Redis antes da escala horizontal.
+Caixa Postal completa (`MSGCONTRIBUINTE61` e `OBTERMSG62`): é a única lacuna do
+F03 que está no catálogo do Integra Contador, tem cenário no ambiente de
+demonstração e converte direto em "zero intimação perdida". O indicador atual
+avisa que existe mensagem nova; ele não diz qual.
+
+Em paralelo, tratar certidões como decisão de produto antes de decisão técnica,
+conectar o keyring a KMS/HSM e substituir o rate limiting em memória por Redis
+antes da escala horizontal.

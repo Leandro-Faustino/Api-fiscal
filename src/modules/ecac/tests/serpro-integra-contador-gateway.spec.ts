@@ -113,6 +113,7 @@ function gateway(
   serproHttpTransport: SerproHttpTransport,
   serproConnectionRepository = repository(),
   ecacSitfisProcessRepository = sitfisRepository(),
+  serproTrialBearer = '',
 ): SerproIntegraContadorGateway {
   return new SerproIntegraContadorGateway({
     serproConnectionRepository,
@@ -120,8 +121,11 @@ function gateway(
     credentialCipher: cipher(),
     serproHttpTransport,
     serproAuthUrl: 'https://auth.example.test/authenticate',
-    serproApiBaseUrl: 'https://api.example.test/integra-contador/v1',
+    serproApiBaseUrl: serproTrialBearer
+      ? 'https://api.example.test/integra-contador-trial/v1'
+      : 'https://api.example.test/integra-contador/v1',
     serproTimeoutMs: 5_000,
+    serproTrialBearer,
   });
 }
 
@@ -542,6 +546,59 @@ describe('adaptador Integra Contador/Serpro', () => {
         providerStatus: 500,
       }),
     );
+  });
+
+  it('usa o Bearer de demonstração sem autenticar nem enviar jwt_token', async () => {
+    const requests: SerproHttpRequest[] = [];
+    const transport: SerproHttpTransport = {
+      request: vi.fn(async (input: SerproHttpRequest) => {
+        requests.push(input);
+        return response(200, {
+          status: 200,
+          dados: JSON.stringify({
+            codigo: '00',
+            conteudo: [{ indicadorMensagensNovas: '0' }],
+          }),
+          mensagens: [],
+        });
+      }),
+    };
+    const connection = repository();
+
+    const result = await gateway(
+      transport,
+      connection,
+      sitfisRepository(),
+      'trial-bearer-token',
+    ).query(queryInput);
+
+    expect(result).toMatchObject({ provider: 'SERPRO_INTEGRA_CONTADOR' });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.url).toBe(
+      'https://api.example.test/integra-contador-trial/v1/Consultar',
+    );
+    expect(requests[0]!.headers.authorization).toBe('Bearer trial-bearer-token');
+    expect(requests[0]!.headers).not.toHaveProperty('jwt_token');
+    expect(requests[0]!.pfx).toBeUndefined();
+    expect(connection.recordUseWithAudit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'AUTHENTICATE' }),
+    );
+  });
+
+  it('não repete a consulta de demonstração quando o trial devolve 401', async () => {
+    const transport: SerproHttpTransport = {
+      request: vi.fn(async () => response(401, { status: 401 })),
+    };
+
+    await expect(
+      gateway(
+        transport,
+        repository(),
+        sitfisRepository(),
+        'trial-bearer-token',
+      ).query(queryInput),
+    ).rejects.toMatchObject({ code: 'ECAC_SERPRO_HTTP_401' });
+    expect(transport.request).toHaveBeenCalledTimes(1);
   });
 
   it('mantém consultas ainda não implementadas bloqueadas', async () => {

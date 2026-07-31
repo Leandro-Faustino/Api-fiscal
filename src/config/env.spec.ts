@@ -49,6 +49,31 @@ describe('configuração do ambiente', () => {
     ).toThrow('As chaves anteriores do cofre devem ser um objeto JSON');
   });
 
+  it('aceita o Bearer de demonstração apenas com a URL de trial fora de produção', () => {
+    const trial = loadEnv({
+      ...requiredEnvironment,
+      SERPRO_API_BASE_URL:
+        'https://gateway.apiserpro.serpro.gov.br/integra-contador-trial/v1',
+      SERPRO_TRIAL_BEARER: 'demo-token',
+    });
+    expect(trial.SERPRO_TRIAL_BEARER).toBe('demo-token');
+
+    expect(() =>
+      loadEnv({
+        ...requiredEnvironment,
+        SERPRO_TRIAL_BEARER: 'demo-token',
+      }),
+    ).toThrow('O Bearer de demonstração exige a URL de trial do Integra Contador.');
+
+    expect(() =>
+      loadEnv({
+        ...requiredEnvironment,
+        NODE_ENV: 'production',
+        SERPRO_TRIAL_BEARER: 'demo-token',
+      }),
+    ).toThrow('O Bearer de demonstração do SERPRO não pode ser usado em produção.');
+  });
+
   it('restringe os endpoints SERPRO em produção', () => {
     expect(() =>
       loadEnv({

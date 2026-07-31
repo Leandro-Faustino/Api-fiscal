@@ -47,6 +47,7 @@ const envSchema = z
       .min(1_000)
       .max(60_000)
       .default(15_000),
+    SERPRO_TRIAL_BEARER: z.string().trim().default(''),
     ECAC_WORKER_POLL_INTERVAL_MS: z.coerce
       .number()
       .int()
@@ -221,6 +222,25 @@ const envSchema = z
           path: ['ECAC_EMAIL_HTTP_AUTHORIZATION'],
           message:
             'A autorização HTTP das notificações e-CAC é obrigatória em produção.',
+        });
+      }
+    }
+
+    if (env.SERPRO_TRIAL_BEARER) {
+      if (env.NODE_ENV === 'production') {
+        context.addIssue({
+          code: 'custom',
+          path: ['SERPRO_TRIAL_BEARER'],
+          message:
+            'O Bearer de demonstração do SERPRO não pode ser usado em produção.',
+        });
+      }
+      if (!env.SERPRO_API_BASE_URL.includes('/integra-contador-trial/')) {
+        context.addIssue({
+          code: 'custom',
+          path: ['SERPRO_TRIAL_BEARER'],
+          message:
+            'O Bearer de demonstração exige a URL de trial do Integra Contador.',
         });
       }
     }

@@ -212,6 +212,24 @@ recifrados em lotes por `POST /v1/control/ecac/sitfis/rotate-key`.
 `DEBTS` permanece bloqueado até a seleção e implementação do serviço oficial
 correspondente.
 
+## Ambiente de demonstração
+
+Definir `SERPRO_TRIAL_BEARER` coloca o adaptador em modo demonstração: ele usa o
+Bearer publicado pelo SERPRO, não chama o endpoint de autenticação, não abre o
+certificado do cofre, omite `jwt_token` e não repete a consulta em `401`. A
+validação de ambiente exige que `SERPRO_API_BASE_URL` aponte para
+`/integra-contador-trial/` e recusa o Bearer de demonstração em produção.
+
+Para explorar um serviço ainda sem adaptador, sem tocar banco nem cofre:
+
+```bash
+SERPRO_TRIAL_BEARER=<token-de-demonstracao> \
+  npm run smoke:serpro-trial -- CAIXAPOSTAL INNOVAMSG63 1.0
+```
+
+A cobertura do catálogo, o que fica fora dele e as três camadas de teste estão
+em [docs/integra-contador-catalogo.md](integra-contador-catalogo.md).
+
 Para desenvolvimento local do worker, use `npm run dev:ecac-worker`. A API e o
 worker são processos independentes e compartilham somente a fila persistida no
 PostgreSQL.

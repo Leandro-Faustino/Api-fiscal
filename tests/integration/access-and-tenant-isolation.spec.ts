@@ -56,6 +56,7 @@ const env: Env = {
   SERPRO_AUTH_URL: 'https://serpro-auth.invalid/authenticate',
   SERPRO_API_BASE_URL: 'https://serpro-api.invalid/integra-contador/v1',
   SERPRO_TIMEOUT_MS: 1_000,
+  SERPRO_TRIAL_BEARER: '',
   ECAC_WORKER_POLL_INTERVAL_MS: 30_000,
   ECAC_WORKER_BATCH_SIZE: 25,
   ECAC_MONITORING_BATCH_SIZE: 25,

@@ -78,6 +78,7 @@ export AUTH_RATE_LIMIT_WINDOW_MS=60000
 export SERPRO_AUTH_URL=https://autenticacao.sapi.serpro.gov.br/authenticate
 export SERPRO_API_BASE_URL=https://gateway.apiserpro.serpro.gov.br/integra-contador/v1
 export SERPRO_TIMEOUT_MS=15000
+export SERPRO_TRIAL_BEARER=
 export ECAC_MONITORING_BATCH_SIZE=25
 export ECAC_EMAIL_PROVIDER=disabled
 export ECAC_EMAIL_HTTP_URL=
@@ -203,9 +204,11 @@ unitários, testes de integração, checagem de tipos e build.
 - O primeiro adaptador do cofre usa um keyring fornecido por variáveis de ambiente.
   Antes de armazenar certificados reais em produção, trocar esse adaptador por
   KMS/HSM com controle de acesso da infraestrutura.
-- O Radar cobre hoje `TAX_STATUS` e `MAILBOX`. Situação cadastral, certidões,
-  malha fiscal, e-processos, PRONAMPE e `DEBTS` dependem da seleção dos serviços
-  oficiais correspondentes e ainda não têm adaptador.
+- O Radar cobre hoje `TAX_STATUS` e `MAILBOX`. e-Processo e a Caixa Postal
+  completa existem no catálogo do Integra Contador e ainda não têm adaptador;
+  certidões, malha fiscal e PRONAMPE **não estão nesse catálogo** e dependem de
+  outras fontes. Ver
+  [docs/integra-contador-catalogo.md](docs/integra-contador-catalogo.md).
 - A consulta de Caixa Postal devolve apenas o indicador de novas mensagens; a
   listagem e o detalhe das intimações ainda serão conectados.
 - O adaptador Integra Contador já autentica com mTLS, consulta o indicador de
@@ -216,4 +219,8 @@ unitários, testes de integração, checagem de tipos e build.
   conectado.
 - A BrasilAPI é o primeiro adaptador de consulta cadastral, não uma garantia de fonte oficial ou SLA de produção.
 - Nenhuma faixa, alíquota, sublimite ou prazo fiscal foi codificado.
+- O ambiente de demonstração do Integra Contador é habilitado por
+  `SERPRO_TRIAL_BEARER` e nunca aceito em produção. Use
+  `npm run smoke:serpro-trial` para inspecionar um serviço antes de escrever o
+  adaptador.
 - Os demais itens do Control estão priorizados em [docs/control-roadmap.md](docs/control-roadmap.md).
