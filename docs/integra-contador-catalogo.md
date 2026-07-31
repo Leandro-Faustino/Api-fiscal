@@ -34,6 +34,26 @@ parte, outra pulverizada em milhares de municípios. É o mesmo tipo de limitaç
 estrutural que o plano já reconhece para o ISS no F47, e merece o mesmo
 tratamento: comunicar o escopo real antes de vender.
 
+## Superfície da API
+
+O contrato OpenAPI 3 do ambiente de demonstração (`api-integra-contador-trial-sp`)
+expõe cinco endpoints, todos `POST`, diferenciados pela natureza da operação e
+não pelo sistema consultado:
+
+| Endpoint | Natureza | Uso hoje |
+|---|---|---|
+| `/Consultar` | Pedido de dados do tipo consulta | Caixa Postal |
+| `/Apoiar` | Serviços auxiliares de suporte | SITFIS — solicitação de protocolo |
+| `/Emitir` | Emissão ou geração de documento de arrecadação | SITFIS — relatório |
+| `/Declarar` | Entrega ou transmissão de declaração | Ainda não usado — PGDAS-D, DCTFWeb |
+| `/Monitorar` | Serviços auxiliares de monitoração de eventos | Ainda não usado |
+
+O corpo é sempre o mesmo envelope (`DadosEntrada`): `contratante`,
+`autorPedidoDados`, `contribuinte` e `pedidoDados`. O que muda de serviço para
+serviço é o par `idSistema`/`idServico` e o conteúdo do campo `dados`, que é uma
+**string com JSON próprio de cada serviço** — é exatamente esse conteúdo que a
+sondagem precisa descobrir, porque o contrato OpenAPI não o descreve.
+
 ## Serviços relevantes para as próximas fatias
 
 Identificadores levantados em fontes públicas — **conferir antes de codificar**:

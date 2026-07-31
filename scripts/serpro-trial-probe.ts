@@ -12,9 +12,17 @@
  */
 import { NativeSerproHttpTransport } from '../src/modules/ecac/infra/http/native-serpro-http-transport.js';
 
+/** Os cinco tipos de endpoint do Integra Contador. */
+type IntegraContadorPath =
+  | '/Apoiar'
+  | '/Consultar'
+  | '/Declarar'
+  | '/Emitir'
+  | '/Monitorar';
+
 interface Probe {
   label: string;
-  path: '/Consultar' | '/Apoiar' | '/Emitir';
+  path: IntegraContadorPath;
   system: string;
   service: string;
   systemVersion: string;
