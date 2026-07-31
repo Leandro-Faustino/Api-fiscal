@@ -86,17 +86,24 @@ autenticação, não abre o certificado do cofre, omite `jwt_token` e não repet
 consulta em `401` — um `401` ali significa token de demonstração errado, não
 sessão expirada.
 
-Para explorar um serviço **antes** de existir adaptador, há uma chamada avulsa
-que não toca banco, cofre nem certificado:
+Para explorar um serviço **antes** de existir adaptador, há duas chamadas
+avulsas que não tocam banco, cofre nem certificado. O arquivo
+`.env.trial.example` traz o token público de demonstração e os CNPJs dos
+cenários:
 
 ```bash
-SERPRO_TRIAL_BEARER=<token-de-demonstracao> \
-  npm run smoke:serpro-trial -- CAIXAPOSTAL INNOVAMSG63 1.0
+set -a && source .env.trial.example && set +a
+
+# um serviço específico
+npm run smoke:serpro-trial -- CAIXAPOSTAL MSGCONTRIBUINTE61 1.0
+
+# a lista de serviços candidatos às próximas fatias, em um relatório único
+npm run probe:serpro-trial > probe.json
 ```
 
-O script imprime status e corpo truncado. É o caminho recomendado para
-descobrir o formato real de um serviço novo e transformá-lo em teste da
-camada 1.
+A sondagem não precisa passar para ser útil: uma recusa por campo obrigatório
+ausente **nomeia o campo** que o adaptador precisa enviar. É assim que o
+contrato de um serviço novo vira teste da camada 1.
 
 ### 3. Contrato real, com certificado
 

@@ -220,7 +220,8 @@ unitários, testes de integração, checagem de tipos e build.
 - A BrasilAPI é o primeiro adaptador de consulta cadastral, não uma garantia de fonte oficial ou SLA de produção.
 - Nenhuma faixa, alíquota, sublimite ou prazo fiscal foi codificado.
 - O ambiente de demonstração do Integra Contador é habilitado por
-  `SERPRO_TRIAL_BEARER` e nunca aceito em produção. Use
-  `npm run smoke:serpro-trial` para inspecionar um serviço antes de escrever o
+  `SERPRO_TRIAL_BEARER` e nunca aceito em produção. Carregue
+  `.env.trial.example` e use `npm run smoke:serpro-trial` ou
+  `npm run probe:serpro-trial` para inspecionar um serviço antes de escrever o
   adaptador.
 - Os demais itens do Control estão priorizados em [docs/control-roadmap.md](docs/control-roadmap.md).
